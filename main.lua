@@ -17,6 +17,7 @@ function love.load()
 
     main_router:new({
         validate = {text = {"string","nil"}},
+        responce_validate = {"string"},
         prefix = "echo", fun = function(args, client)
             return args.text or "no text provided"
         end

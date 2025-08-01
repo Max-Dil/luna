@@ -7,6 +7,7 @@ req.new = function(router, config)
         fun = config.fun,
         no_errors = config.no_errors,
         validate = config.validate,
+        responce_validate = config.responce_validate,
         error_handler = config.error_handler or function(message) 
             print(f("Error in request prefix: {req_data.prefix} error: {message}", {req_data = req_data, message = message})) 
         end,
@@ -82,43 +83,39 @@ local function parse_request(data)
     }
 end
 
+local function validate_value(value, expected_types)
+    if value == nil then
+        for _, t in ipairs(expected_types) do
+            if t == "nil" then
+                return true
+            end
+        end
+        return false
+    end
+
+    local actual_type = type(value)
+
+    for _, expected_type in ipairs(expected_types) do
+        if expected_type == "number" and tonumber(value) ~= nil then
+            return true
+        elseif actual_type == expected_type then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function validate_args(validate_config, args)
     for key, expected_types in pairs(validate_config) do
         local value = args[key]
-
-        if value == nil then
-            local nil_allowed = false
-            for _, t in ipairs(expected_types) do
-                if t == "nil" then
-                    nil_allowed = true
-                    break
-                end
-            end
-            if nil_allowed then goto continue end
-        end
-
-        if value ~= nil then
-            local type_match = false
-            local actual_type = type(value)
-            
-            for _, expected_type in ipairs(expected_types) do
-                if expected_type == "number" and tonumber(value) ~= nil then
-                    type_match = true
-                    break
-                elseif actual_type == expected_type then
-                    type_match = true
-                    break
-                end
-            end
-            
-            if not type_match then
-                local expected_str = table.concat(expected_types, " or ")
-                return false, string.format("Argument '%s' expected to be %s, got %s (%s)", 
-                    key, expected_str, actual_type, tostring(value))
-            end
-        end
         
-        ::continue::
+        if not validate_value(value, expected_types) then
+            local expected_str = table.concat(expected_types, " or ")
+            local actual_type = type(value)
+            return false, string.format("Argument '%s' expected to be %s, got %s (%s)", 
+                key, expected_str, actual_type, tostring(value))
+        end
     end
     
     return true
@@ -159,14 +156,28 @@ req.process = function(router, client_data, data)
     end
 
     local ok, result = pcall(request_handler.fun, request.args, client_data)
-    if ok then
-        return result
-    else
+    if not ok then
         if request_handler.error_handler then
             request_handler.error_handler(result)
         end
         return nil, result
     end
+
+    if request_handler.responce_validate then
+        if not validate_value(result, request_handler.responce_validate) then
+            local expected_str = table.concat(request_handler.responce_validate, " or ")
+            local actual_type = type(result)
+            local err_msg = string.format("Response expected to be %s, got %s (%s)", 
+                expected_str, actual_type, tostring(result))
+            
+            if request_handler.error_handler then
+                request_handler.error_handler(err_msg)
+            end
+            return nil, err_msg
+        end
+    end
+
+    return result
 end
 
 return req
