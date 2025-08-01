@@ -20,18 +20,10 @@ function M_string:split(sep, unp, regex)
 	return out
 end
 
-local code_cache = {}
 local function eval_code(code, env)
-    local fn = code_cache[code]
-
+    local fn = load("return "..code, "=(interpolation)", "t", env)
     if not fn then
-        fn = load("return "..code, "=(interpolation)", "t", env)
-        if not fn then
-            fn = load(code, "=(interpolation)", "t", env)
-        end
-        if fn then
-            code_cache[code] = fn
-        end
+        fn = load(code, "=(interpolation)", "t", env)
     end
 
     if fn then

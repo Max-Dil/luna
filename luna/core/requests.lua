@@ -6,6 +6,7 @@ req.new = function(router, config)
         prefix = config.prefix,
         fun = config.fun,
         no_errors = config.no_errors,
+        validate = config.validate,
         error_handler = config.error_handler or function(message) 
             print(f("Error in request prefix: {req_data.prefix} error: {message}", {req_data = req_data, message = message})) 
         end,
@@ -81,6 +82,48 @@ local function parse_request(data)
     }
 end
 
+local function validate_args(validate_config, args)
+    for key, expected_types in pairs(validate_config) do
+        local value = args[key]
+
+        if value == nil then
+            local nil_allowed = false
+            for _, t in ipairs(expected_types) do
+                if t == "nil" then
+                    nil_allowed = true
+                    break
+                end
+            end
+            if nil_allowed then goto continue end
+        end
+
+        if value ~= nil then
+            local type_match = false
+            local actual_type = type(value)
+            
+            for _, expected_type in ipairs(expected_types) do
+                if expected_type == "number" and tonumber(value) ~= nil then
+                    type_match = true
+                    break
+                elseif actual_type == expected_type then
+                    type_match = true
+                    break
+                end
+            end
+            
+            if not type_match then
+                local expected_str = table.concat(expected_types, " or ")
+                return false, string.format("Argument '%s' expected to be %s, got %s (%s)", 
+                    key, expected_str, actual_type, tostring(value))
+            end
+        end
+        
+        ::continue::
+    end
+    
+    return true
+end
+
 req.process = function(router, client_data, data)
     local request, err = parse_request(data)
     if not request then
@@ -103,6 +146,16 @@ req.process = function(router, client_data, data)
     local request_handler = router_data.requests[request_prefix]
     if not request_handler or not request_handler.fun then
         return nil, "No handler found for path: "..request.path
+    end
+
+    if request_handler.validate then
+        local valid, err_msg = validate_args(request_handler.validate, request.args)
+        if not valid then
+            if request_handler.error_handler then
+                request_handler.error_handler(err_msg)
+            end
+            return nil, err_msg
+        end
     end
 
     local ok, result = pcall(request_handler.fun, request.args, client_data)

@@ -30,7 +30,8 @@ local class = {
                 elseif type(v) == "boolean" then
                     text = tostring(v)
                 else
-                    text = "no support "..type(v)
+                    text = "'no support "..type(v).."'"
+                    error("'no support "..type(v).."'", 2)
                 end
                 table.insert(arg_parts, string.format(k.."=("..text..")"))
             end
