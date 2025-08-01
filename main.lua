@@ -20,7 +20,6 @@ function love.load()
         validate = {text = {"string","nil"}},
         responce_validate = {"string"},
         prefix = "echo", fun = function(args, client)
-            client:send("test\n")
             return args.text or "no text provided"
         end
     })
@@ -36,17 +35,13 @@ function love.load()
             print("New message client:send     ", message)
         end
     })
+
+    client:noawait_fetch("api/echo", {text = "hello world"})
+    local response = client:fetch("api/echo", {text = "hello world"})
+    print("Echo data: "..response)
 end
 
-local t = 0
 function love.update(dt)
     luna.update(dt)
     lunac.update(dt)
-
-    t = t + dt
-    if t > 2 then
-        local response = client:fetch("api/echo", {text = "hello world"})
-        print("Echo response:", response)
-        t = 0
-    end
 end

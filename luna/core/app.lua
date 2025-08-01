@@ -160,15 +160,17 @@ app.update = function(dt)
                     response_to_send = {request = "unknown", response = response, id = "unknown id", __luna = true}
                 end
 
-                local ok, send_err = pcall(function()
-                    client_data.client:send(json.encode(response_to_send) .. "\n")
-                end)
-                if not ok then
-                    handle_error(m, f("Error sending data to client {client_data.ip}:{client_data.port}: {send_err}", {
-                        client_data = client_data,
-                        send_err = send_err
-                    }))
-                    table.remove(m.clients, i)
+                if not response_to_send.__noawait then
+                    local ok, send_err = pcall(function()
+                        client_data.client:send(json.encode(response_to_send) .. "\n")
+                    end)
+                    if not ok then
+                        handle_error(m, f("Error sending data to client {client_data.ip}:{client_data.port}: {send_err}", {
+                            client_data = client_data,
+                            send_err = send_err
+                        }))
+                        table.remove(m.clients, i)
+                    end
                 end
             end
         end

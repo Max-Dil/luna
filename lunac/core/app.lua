@@ -109,6 +109,54 @@ local class = {
             end
         end
     end,
+    noawait_fetch = function(app_data, path, args, timeout)
+        if type(app_data) == "string" then
+            app_data = apps[app_data]
+        end
+
+        if not app_data or not app_data.connected then
+            if app_data.no_errors then
+                app_data.error_handler("Not connected to server")
+                return nil, "Not connected to server"
+            else
+                error("Not connected to server", 2)
+            end
+        end
+
+        local request_id = uuid()
+
+        local request = path
+        if args then
+            local arg_parts = {}
+            for k, v in pairs(args) do
+                local text
+                if type(v) == "string" then
+                    text = "'"..v.."'"
+                elseif type(v) == "number" then
+                    text = v
+                elseif type(v) == "boolean" then
+                    text = tostring(v)
+                else
+                    text = "'no support "..type(v).."'"
+                    error("'no support "..type(v).."'", 2)
+                end
+                table.insert(arg_parts, string.format(k.."=("..text..")"))
+            end
+            table.insert(arg_parts, "__id=('"..request_id.."')")
+            table.insert(arg_parts, "__noawait=(true)")
+            request = request .. " " .. table.concat(arg_parts, " ")
+        end
+
+        local success, err = app_data.client:send(request .. "\n")
+        if not success then
+            if app_data.no_errors then
+                app_data.error_handler(f("Send failed: {err}", {err = err}))
+                return nil, err or "Failed to send request"
+            else
+                error(f("Send failed: {err}", {err = err}), 2)
+            end
+        end
+    end,
 }
 
 app.connect = function(config)
