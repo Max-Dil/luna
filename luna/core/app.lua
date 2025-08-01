@@ -157,7 +157,7 @@ app.update = function(dt)
                 if type(response) == "table" and (response.request or response.error or response.response or response.id) then
                     response_to_send = response
                 else
-                    response_to_send = {request = "unknown", response = response, id = "unknown id"}
+                    response_to_send = {request = "unknown", response = response, id = "unknown id", __luna = true}
                 end
 
                 local ok, send_err = pcall(function()

@@ -151,7 +151,7 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id")}
+            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true}
         end
     end
 
@@ -160,7 +160,7 @@ req.process = function(router, client_data, data)
         if request_handler.error_handler then
             request_handler.error_handler(result)
         end
-        return {request = request.path, error = result, id = (request.args.__id or "unknown id")}
+        return {request = request.path, error = result, id = (request.args.__id or "unknown id"), __luna = true}
     end
 
     if request_handler.responce_validate then
@@ -173,11 +173,11 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id")}
+            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true}
         end
     end
 
-    return {request = request.path, response = result, id = (request.args.__id or "unknown id")}
+    return {request = request.path, response = result, id = (request.args.__id or "unknown id"), __luna = true}
 end
 
 return req

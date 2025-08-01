@@ -9,7 +9,7 @@ local function parse_response(line)
     if ok and type(result) == "table" then
         return result
     end
-    return {request = "unknown", response = line}
+    return {request = "unknown", response = line, id = "unknown id"}
 end
 
 local uuid = function()
@@ -78,13 +78,13 @@ local class = {
             local line, err = app_data.client:receive("*l")
             if line then
                 local response = parse_response(line)
-                if response.request == path and response.id == request_id then
+                if response.__luna and response.request == path and response.id == request_id then
                     if response.error then
                         return nil, response.error
                     end
                     return response.response
                 else
-                    if app_data.listener then
+                    if app_data.listener and not response.__luna then
                         app_data.listener(line)
                     end
                 end
