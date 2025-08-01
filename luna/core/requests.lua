@@ -151,16 +151,16 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return nil, err_msg
+            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id")}
         end
     end
 
-    local ok, result = pcall(request_handler.fun, request.args, client_data)
+    local ok, result = pcall(request_handler.fun, request.args, client_data.client)
     if not ok then
         if request_handler.error_handler then
             request_handler.error_handler(result)
         end
-        return nil, result
+        return {request = request.path, error = result, id = (request.args.__id or "unknown id")}
     end
 
     if request_handler.responce_validate then
@@ -173,11 +173,11 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return nil, err_msg
+            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id")}
         end
     end
 
-    return result
+    return {request = request.path, response = result, id = (request.args.__id or "unknown id")}
 end
 
 return req

@@ -1,5 +1,6 @@
 local socket = require("socket")
 local router = require("luna.core.router")
+local json = require("luna.libs.json")
 
 local app = {}
 local apps = {}
@@ -37,7 +38,15 @@ app.new_app = function(config)
 
         clients = {},
         ip_counts = {},
-        routers = {}
+        routers = {},
+
+        get_clients = function ()
+            local clients = {}
+            for key, value in pairs(app_data.clients) do
+                table.insert(clients, value.client)
+            end
+            return clients
+        end,
     }, {__index = router})
 
     local ok, err = pcall(function()
@@ -144,8 +153,15 @@ app.update = function(dt)
                     end
                 end
 
+                local response_to_send
+                if type(response) == "table" and (response.request or response.error or response.response or response.id) then
+                    response_to_send = response
+                else
+                    response_to_send = {request = "unknown", response = response, id = "unknown id"}
+                end
+
                 local ok, send_err = pcall(function()
-                    client_data.client:send(tostring(response or "No handler found") .. "\n")
+                    client_data.client:send(json.encode(response_to_send) .. "\n")
                 end)
                 if not ok then
                     handle_error(m, f("Error sending data to client {client_data.ip}:{client_data.port}: {send_err}", {

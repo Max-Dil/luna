@@ -10,8 +10,4 @@ luna.remove_app = function (app_data)
     app.remove(app_data)
 end
 
-luna.load_library = function (package_name)
-    
-end
-
 return {luna, {app_update = app.update}}

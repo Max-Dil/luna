@@ -1,7 +1,24 @@
 local socket = require("socket")
+local json = require("lunac.libs.json")
 
 local app = {}
 local apps = {}
+
+local function parse_response(line)
+    local ok, result = pcall(json.decode, line)
+    if ok and type(result) == "table" then
+        return result
+    end
+    return {request = "unknown", response = line}
+end
+
+local uuid = function()
+    local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+    return string.gsub(template, '[xy]', function(c)
+        local v = (c == 'x') and math.random(0, 15) or math.random(8, 11)
+        return string.format('%x', v)
+    end)
+end
 
 local class = {
     fetch = function(app_data, path, args, timeout)
@@ -17,6 +34,8 @@ local class = {
                 error("Not connected to server", 2)
             end
         end
+
+        local request_id = uuid()
 
         local request = path
         if args then
@@ -35,9 +54,8 @@ local class = {
                 end
                 table.insert(arg_parts, string.format(k.."=("..text..")"))
             end
-            if #arg_parts > 0 then
-                request = request .. " " .. table.concat(arg_parts, " ")
-            end
+            table.insert(arg_parts, "__id=('"..request_id.."')")
+            request = request .. " " .. table.concat(arg_parts, " ")
         end
 
         local success, err = app_data.client:send(request .. "\n")
@@ -59,7 +77,17 @@ local class = {
             end
             local line, err = app_data.client:receive("*l")
             if line then
-                return line
+                local response = parse_response(line)
+                if response.request == path and response.id == request_id then
+                    if response.error then
+                        return nil, response.error
+                    end
+                    return response.response
+                else
+                    if app_data.listener then
+                        app_data.listener(line)
+                    end
+                end
             elseif err == "timeout" then
                 if socket.gettime() - start_time > timeout then
                     if app_data.no_errors then
@@ -96,6 +124,7 @@ app.connect = function(config)
         error_handler = config.error_handler or function(message) 
             print(f("Error in app '{name}': {message}", {name = config.name or "unknown name", message = message})) 
         end,
+        listener = config.listener,
         connected = false,
         client = nil,
         server = config.server
@@ -183,6 +212,9 @@ app.update = function(dt)
         if app_data.connected then
             local line = app.receive(app_data)
             if line then
+                if app_data.listener then
+                    app_data.listener(line)
+                end
                 print(f("[{name}] Received: {line}", {name = name, line = line}))
             end
         end
