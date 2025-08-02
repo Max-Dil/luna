@@ -9,7 +9,7 @@ req.new = function(router, config)
         validate = config.validate,
         responce_validate = config.responce_validate,
         error_handler = config.error_handler or function(message) 
-            print(f("Error in request prefix: {req_data.prefix} error: {message}", {req_data = req_data, message = message})) 
+            print("Error in request prefix: "..req_data.prefix.." error: "..message) 
         end,
         router = router
     }

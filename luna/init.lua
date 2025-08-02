@@ -1,17 +1,4 @@
--- globals
-do
-    local m_string = require("luna.core.string")
-    _G["f"] = function (text, t)
-        return m_string.f(text, t)
-    end
-
-    _G["split"] = function (text, sep, unp, regex)
-        return m_string.split(text, sep, unp, regex)
-    end
-end
-----------
-
-local core = require("luna.core")
+local core = require("luna.core.init")
 
 local luna = {}
 

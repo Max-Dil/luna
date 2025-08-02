@@ -30,7 +30,7 @@ app.new_app = function(config)
         max_ip_connected = config.max_ip_connected or 100,
         name = config.name or "unknown name",
         error_handler = config.error_handler or function(message) 
-            print(f("Error in app '{app_data.name}': {message}", {app_data = app_data, message = message})) 
+            print("Error in app '"..app_data.name.."': "..message) 
         end,
         no_errors = config.no_errors,
         host = config.host or "*",
@@ -55,11 +55,11 @@ app.new_app = function(config)
     end)
 
     if not ok then
-        handle_error(app_data, f("Failed to start app on {app_data.host}:{app_data.port}: {err}", {app_data = app_data, err = err}))
+        handle_error(app_data, "Failed to start app on "..app_data.host..":"..app_data.port..": "..err)
         return nil, err
     end
 
-    print(f("App '{app_data.name}' started on {app_data.host}:{app_data.port}", {app_data = app_data}))
+    print("App '"..app_data.name.."' started on "..app_data.host..":"..app_data.port)
     apps[app_data.name] = app_data
     return app_data
 end
@@ -78,16 +78,16 @@ app.remove = function(app_data)
     for _, client_data in ipairs(app_data.clients) do
         local ok, err = pcall(function() client_data.client:close() end)
         if not ok then
-            handle_error(app_data, f("Error closing client connection: {err}", {err = err}))
+            handle_error(app_data, "Error closing client connection: "..err)
         end
     end
 
     local ok, err = pcall(function() app_data.server:close() end)
     if not ok then
-        handle_error(app_data, f("Error closing server: {err}", {err = err}))
+        handle_error(app_data, "Error closing server: "..err)
     end
 
-    print(f("Server '{name}' stopped", {name = name}))
+    print("Server '"..name.."' stopped")
     return true
 end
 
@@ -95,13 +95,13 @@ app.update = function(dt)
     for key, m in pairs(apps) do
         local new_client, err = m.server:accept()
         if err and err ~= "timeout" then
-            handle_error(m, f("Error accepting connection: {err}", {err = err}))
+            handle_error(m, "Error accepting connection: "..err)
         end
 
         if new_client then
             local ok, ip, port = pcall(function() return new_client:getpeername() end)
             if not ok then
-                handle_error(m, f("Error getting peer name: {ip}", {ip = ip}))
+                handle_error(m, "Error getting peer name: "..ip)
                 new_client:close()
             else
                 new_client:settimeout(0)
@@ -117,7 +117,7 @@ app.update = function(dt)
                     print("app: "..m.name, "New client connected ip: "..ip..", port: "..port)
                 else
                     new_client:close()
-                    print(f("Rejected connection from {ip}: max connections ({m.max_ip_connected}) reached", {ip = ip, m = m}))
+                    print("Rejected connection from "..ip"..: max connections ("..m.max_ip_connected..") reached")
                     m.ip_counts[ip] = m.ip_counts[ip] - 1
                 end
             end
@@ -136,10 +136,7 @@ app.update = function(dt)
                     print("app: "..m.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port)
                     table.remove(m.clients, i)
                 elseif err ~= "timeout" then
-                    handle_error(m, f("Error receiving data from client {client_data.ip}:{client_data.port}: {err}", {
-                        client_data = client_data,
-                        err = err
-                    }))
+                    handle_error(m, "Error receiving data from client "..client_data.ip..":"..client_data.port..": "..err)
                 end
             elseif data then
                 print("app: "..m.name, client_data.ip..":"..client_data.port, data)
@@ -165,10 +162,7 @@ app.update = function(dt)
                         client_data.client:send(json.encode(response_to_send) .. "\n")
                     end)
                     if not ok then
-                        handle_error(m, f("Error sending data to client {client_data.ip}:{client_data.port}: {send_err}", {
-                            client_data = client_data,
-                            send_err = send_err
-                        }))
+                        handle_error(m, "Error sending data to client "..client_data.ip..":"..client_data.port..": "..send_err)
                         table.remove(m.clients, i)
                     end
                 end

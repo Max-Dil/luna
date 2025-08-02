@@ -61,10 +61,10 @@ local class = {
         local success, err = app_data.client:send(request .. "\n")
         if not success then
             if app_data.no_errors then
-                app_data.error_handler(f("Send failed: {err}", {err = err}))
+                app_data.error_handler("Send failed: "..err)
                 return nil, err or "Failed to send request"
             else
-                error(f("Send failed: {err}", {err = err}), 2)
+                error("Send failed: "..err, 2)
             end
         end
 
@@ -101,10 +101,10 @@ local class = {
             else
                 app_data.connected = false
                 if app_data.no_errors then
-                    app_data.error_handler(f("Receive failed: {err}", {err = err}))
+                    app_data.error_handler("Receive failed: "..err)
                     return nil, err or "Failed to receive response"
                 else
-                    error(f("Receive failed: {err}", {err = err}), 2)
+                    error("Receive failed: "..err, 2)
                 end
             end
         end
@@ -150,10 +150,10 @@ local class = {
         local success, err = app_data.client:send(request .. "\n")
         if not success then
             if app_data.no_errors then
-                app_data.error_handler(f("Send failed: {err}", {err = err}))
+                app_data.error_handler("Send failed: "..err)
                 return nil, err or "Failed to send request"
             else
-                error(f("Send failed: {err}", {err = err}), 2)
+                error("Send failed: "..err, 2)
             end
         end
     end,
@@ -161,7 +161,7 @@ local class = {
 
 app.connect = function(config)
     if not config.host then
-        error(f("Error connect to app unknown host, app_name: {name}", {name = config.name or "unknown name"}), 2)
+        error("Error connect to app unknown host, app_name: "..config.name, 2)
     end
 
     local app_data = setmetatable({
@@ -170,7 +170,7 @@ app.connect = function(config)
         port = config.port or 433,
         no_errors = config.no_errors,
         error_handler = config.error_handler or function(message) 
-            print(f("Error in app '{name}': {message}", {name = config.name or "unknown name", message = message})) 
+            print("Error in app '"..config.name.."': "..message) 
         end,
         listener = config.listener,
         connected = false,
@@ -181,10 +181,10 @@ app.connect = function(config)
     local client, err = socket.connect(config.host, config.port)
     if not client then
         if app_data.no_errors then
-            app_data.error_handler(f("Connection failed: {err}", {err = err}))
+            app_data.error_handler("Connection failed: "..err)
             return nil
         else
-            error(f("Connection failed: {err}", {err = err}), 2)
+            error("Connection failed: "..err, 2)
         end
     end
 
@@ -192,7 +192,7 @@ app.connect = function(config)
     app_data.client = client
     app_data.connected = true
 
-    print(f("Connected to {host}:{port}", {host = config.host, port = config.port}))
+    print("Connected to "..config.host..":"..config.port)
 
     apps[app_data.name] = app_data
     return app_data
@@ -215,10 +215,10 @@ app.send = function(app_data, data)
     local success, err = app_data.client:send(data .. "\n")
     if not success then
         if app_data.no_errors then
-            app_data.error_handler(f("Send failed: {err}", {err = err}))
+            app_data.error_handler("Send failed: "..err)
             return false
         else
-            error(f("Send failed: {err}", {err = err}), 2)
+            error("Send failed: "..err, 2)
         end
     end
 
@@ -247,10 +247,10 @@ app.receive = function(app_data)
     else
         app_data.connected = false
         if app_data.no_errors then
-            app_data.error_handler(f("Receive failed: {err}", {err = err}))
+            app_data.error_handler("Receive failed: "..err)
             return nil
         else
-            error(f("Receive failed: {err}", {err = err}), 2)
+            error("Receive failed: "..err, 2)
         end
     end
 end
@@ -263,7 +263,7 @@ app.update = function(dt)
                 if app_data.listener then
                     app_data.listener(line)
                 end
-                print(f("[{name}] Received: {line}", {name = name, line = line}))
+                print("["..name.."] Received: "..line)
             end
         end
     end
@@ -279,7 +279,7 @@ app.close = function(app_data)
     if app_data.connected then
         app_data.client:close()
         app_data.connected = false
-        print(f("Disconnected from {host}:{port}", {host = app_data.host, port = app_data.port}))
+        print("Disconnected from "..app_data.host..":"..app_data.port)
     end
 
     apps[app_data.name] = nil

@@ -11,7 +11,7 @@ router.new_router = function(app, config)
         prefix = config.prefix,
         no_errors = config.no_errors,
         error_handler = config.error_handler or function(message) 
-            print(f("Error in router prefix: {router_data.prefix} error: {message}", {router_data = router_data, message = message})) 
+            print("Error in router prefix: "..router_data.prefix.." error: "..message) 
         end,
         requests = {},
         app = app,
