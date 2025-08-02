@@ -20,6 +20,27 @@ local uuid = function()
     end)
 end
 
+local function try_connect(app_data)
+    local client, err = socket.connect(app_data.host, app_data.port)
+    if client then
+        client:settimeout(0)
+        app_data.client = client
+        app_data.connected = true
+        app_data.trying_to_reconnect = false
+        print("Connected to "..app_data.host..":"..app_data.port)
+        return true
+    else
+        if not app_data.trying_to_reconnect then
+            app_data.error_handler("Connection failed: "..err)
+            if app_data.reconnect_time then
+                app_data.trying_to_reconnect = true
+                app_data.reconnect_timer = 0
+            end
+        end
+        return false
+    end
+end
+
 local class = {
     fetch = function(app_data, path, args, timeout)
         if type(app_data) == "string" then
@@ -75,6 +96,22 @@ local class = {
             if app_data.server then
                 app_data.server.update()
             end
+
+            if not app_data.connected then
+                if app_data.reconnect_time then
+                    if try_connect(app_data) then
+                        success, err = app_data.client:send(request .. "\n")
+                        if not success then
+                            return nil, err or "Failed to resend request after reconnect"
+                        end
+                    else
+                        return nil, "Disconnected and reconnect failed"
+                    end
+                else
+                    return nil, "Disconnected"
+                end
+            end
+
             local line, err = app_data.client:receive("*l")
             if line then
                 local response = parse_response(line)
@@ -175,27 +212,48 @@ app.connect = function(config)
         listener = config.listener,
         connected = false,
         client = nil,
-        server = config.server
+        server = config.server,
+        reconnect_time = config.reconnect_time,
+        reconnect_timer = 0,
+        trying_to_reconnect = false
     }, {__index = class})
 
-    local client, err = socket.connect(config.host, config.port)
-    if not client then
-        if app_data.no_errors then
-            app_data.error_handler("Connection failed: "..err)
-            return nil
-        else
-            error("Connection failed: "..err, 2)
+    if not try_connect(app_data) and not app_data.reconnect_time then
+        if not app_data.no_errors then
+            error("Connection failed", 2)
         end
+        return nil
     end
-
-    client:settimeout(0)
-    app_data.client = client
-    app_data.connected = true
-
-    print("Connected to "..config.host..":"..config.port)
 
     apps[app_data.name] = app_data
     return app_data
+end
+
+app.update = function(dt)
+    for name, app_data in pairs(apps) do
+        if app_data.connected then
+            local line, err = app_data.client:receive("*l")
+            if line then
+                if app_data.listener then
+                    app_data.listener(line)
+                end
+                print("["..name.."] Received: "..line)
+            elseif err and err ~= "timeout" then
+                app_data.connected = false
+                app_data.error_handler("Receive failed: "..err)
+                if app_data.reconnect_time then
+                    app_data.trying_to_reconnect = true
+                    app_data.reconnect_timer = 0
+                end
+            end
+        elseif app_data.trying_to_reconnect and app_data.reconnect_time then
+            app_data.reconnect_timer = app_data.reconnect_timer + dt
+            if app_data.reconnect_timer >= app_data.reconnect_time then
+                app_data.reconnect_timer = 0
+                try_connect(app_data)
+            end
+        end
+    end
 end
 
 app.send = function(app_data, data)
@@ -203,7 +261,16 @@ app.send = function(app_data, data)
         app_data = apps[app_data]
     end
 
-    if not app_data or not app_data.connected then
+    if not app_data then
+        if app_data and app_data.no_errors then
+            app_data.error_handler("App not found")
+            return false
+        else
+            error("App not found", 2)
+        end
+    end
+
+    if not app_data.connected then
         if app_data.no_errors then
             app_data.error_handler("Not connected to server")
             return false
@@ -214,6 +281,11 @@ app.send = function(app_data, data)
 
     local success, err = app_data.client:send(data .. "\n")
     if not success then
+        app_data.connected = false
+        if app_data.reconnect_time then
+            app_data.trying_to_reconnect = true
+            app_data.reconnect_timer = 0
+        end
         if app_data.no_errors then
             app_data.error_handler("Send failed: "..err)
             return false
@@ -223,50 +295,6 @@ app.send = function(app_data, data)
     end
 
     return true
-end
-
-app.receive = function(app_data)
-    if type(app_data) == "string" then
-        app_data = apps[app_data]
-    end
-
-    if not app_data or not app_data.connected then
-        if app_data.no_errors then
-            app_data.error_handler("Not connected to server")
-            return nil
-        else
-            error("Not connected to server", 2)
-        end
-    end
-
-    local line, err = app_data.client:receive("*l")
-    if line then
-        return line
-    elseif err == "timeout" then
-        return nil
-    else
-        app_data.connected = false
-        if app_data.no_errors then
-            app_data.error_handler("Receive failed: "..err)
-            return nil
-        else
-            error("Receive failed: "..err, 2)
-        end
-    end
-end
-
-app.update = function(dt)
-    for name, app_data in pairs(apps) do
-        if app_data.connected then
-            local line = app.receive(app_data)
-            if line then
-                if app_data.listener then
-                    app_data.listener(line)
-                end
-                print("["..name.."] Received: "..line)
-            end
-        end
-    end
 end
 
 app.close = function(app_data)
@@ -279,6 +307,7 @@ app.close = function(app_data)
     if app_data.connected then
         app_data.client:close()
         app_data.connected = false
+        app_data.trying_to_reconnect = false
         print("Disconnected from "..app_data.host..":"..app_data.port)
     end
 

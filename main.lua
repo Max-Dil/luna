@@ -31,6 +31,7 @@ function love.load()
         name = "test server",
         no_errors = true,
         server = luna,
+        reconnect_time = 5,
         listener = function (message)
             print("New message client:send     ", message)
         end
