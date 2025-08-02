@@ -109,7 +109,7 @@ local class = {
             end
         end
     end,
-    noawait_fetch = function(app_data, path, args, timeout)
+    noawait_fetch = function(app_data, path, args)
         if type(app_data) == "string" then
             app_data = apps[app_data]
         end
