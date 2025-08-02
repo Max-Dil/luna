@@ -2,4 +2,4 @@ Luna is a modern framework for creating high-performance servers in Lua (5.1/Lua
 The Lunac client provides convenient server interaction. Open source - Luna is released under the MIT license.
 
 Documentations:
-https://stimor-world.github.io/luna-site/index.html
+https://stimor.ru/luna
