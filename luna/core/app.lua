@@ -25,9 +25,13 @@ str host
 int port
 func new_client
 func close_client
+boolean debug
 ]]
 app.new_app = function(config)
     local app_data
+    if config.debug == nil then
+        config.debug = true
+    end
     app_data = setmetatable({
         max_ip_connected = config.max_ip_connected or 100,
         name = config.name or "unknown name",
@@ -52,6 +56,8 @@ app.new_app = function(config)
             end
             return clients
         end,
+
+        debug = config.debug,
     }, {__index = router})
 
     local ok, err = pcall(function()
@@ -119,7 +125,9 @@ app.update = function(dt)
                         client = new_client
                     }
                     table.insert(m.clients, client_data)
-                    print("app: "..m.name, "New client connected ip: "..ip..", port: "..port)
+                    if m.debug then
+                        print("app: "..m.name, "New client connected ip: "..ip..", port: "..port)
+                    end
                     if m.new_client then
                         local ok, cb_err = pcall(m.new_client, client_data.client)
                         if not ok then
@@ -144,7 +152,9 @@ app.update = function(dt)
                     if m.ip_counts[client_data.ip] <= 0 then
                         m.ip_counts[client_data.ip] = nil
                     end
-                    print("app: "..m.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port)
+                    if m.debug then
+                        print("app: "..m.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port)
+                    end
                     table.remove(m.clients, i)
                     if m.close_client then
                         local ok, cb_err = pcall(m.close_client, client_data.client)
@@ -156,7 +166,9 @@ app.update = function(dt)
                     handle_error(m, "Error receiving data from client "..client_data.ip..":"..client_data.port..": "..err)
                 end
             elseif data then
-                print("app: "..m.name, client_data.ip..":"..client_data.port, data)
+                if m.debug then
+                    print("app: "..m.name, client_data.ip..":"..client_data.port, data)
+                end
 
                 local response
                 for _, router_data in pairs(m.routers) do
