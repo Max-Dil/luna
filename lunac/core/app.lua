@@ -28,6 +28,12 @@ local function try_connect(app_data)
         app_data.connected = true
         app_data.trying_to_reconnect = false
         print("Connected to "..app_data.host..":"..app_data.port)
+        if app_data.connect_server then
+            local ok, cb_err = pcall(app_data.connect_server)
+            if not ok then
+                app_data.error_handler("Error in connect_server callback: "..cb_err)
+            end
+        end
         return true
     else
         if not app_data.trying_to_reconnect then
@@ -215,7 +221,10 @@ app.connect = function(config)
         server = config.server,
         reconnect_time = config.reconnect_time,
         reconnect_timer = 0,
-        trying_to_reconnect = false
+        trying_to_reconnect = false,
+
+        connect_server = config.connect_server,
+        disconnect_server = config.disconnect_server
     }, {__index = class})
 
     if not try_connect(app_data) and not app_data.reconnect_time then
@@ -241,6 +250,13 @@ app.update = function(dt)
             elseif err and err ~= "timeout" then
                 app_data.connected = false
                 app_data.error_handler("Receive failed: "..err)
+
+                if app_data.disconnect_server then
+                    local ok, cb_err = pcall(app_data.disconnect_server, err)
+                    if not ok then
+                        app_data.error_handler("Error in disconnect_server callback: "..cb_err)
+                    end
+                end
                 if app_data.reconnect_time then
                     app_data.trying_to_reconnect = true
                     app_data.reconnect_timer = 0
@@ -309,6 +325,13 @@ app.close = function(app_data)
         app_data.connected = false
         app_data.trying_to_reconnect = false
         print("Disconnected from "..app_data.host..":"..app_data.port)
+    end
+
+    if app_data.disconnect_server then
+        local ok, cb_err = pcall(app_data.disconnect_server, "Close server")
+        if not ok then
+            app_data.error_handler("Error in disconnect_server callback: "..cb_err)
+        end
     end
 
     apps[app_data.name] = nil

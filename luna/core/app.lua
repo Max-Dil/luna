@@ -23,6 +23,8 @@ func error_handler
 boolean no_errors
 str host
 int port
+func new_client
+func close_client
 ]]
 app.new_app = function(config)
     local app_data
@@ -35,6 +37,9 @@ app.new_app = function(config)
         no_errors = config.no_errors,
         host = config.host or "*",
         port = config.port or 433,
+
+        new_client = config.new_client,
+        close_client = config.close_client,
 
         clients = {},
         ip_counts = {},
@@ -115,6 +120,12 @@ app.update = function(dt)
                     }
                     table.insert(m.clients, client_data)
                     print("app: "..m.name, "New client connected ip: "..ip..", port: "..port)
+                    if m.new_client then
+                        local ok, cb_err = pcall(m.new_client, client_data.client)
+                        if not ok then
+                            handle_error(m, "Error in new_client callback: "..cb_err)
+                        end
+                    end
                 else
                     new_client:close()
                     print("Rejected connection from "..ip"..: max connections ("..m.max_ip_connected..") reached")
@@ -135,6 +146,12 @@ app.update = function(dt)
                     end
                     print("app: "..m.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port)
                     table.remove(m.clients, i)
+                    if m.close_client then
+                        local ok, cb_err = pcall(m.close_client, client_data.client)
+                        if not ok then
+                            handle_error(m, "Error in close_client callback: "..cb_err)
+                        end
+                    end
                 elseif err ~= "timeout" then
                     handle_error(m, "Error receiving data from client "..client_data.ip..":"..client_data.port..": "..err)
                 end
