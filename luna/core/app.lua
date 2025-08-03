@@ -25,6 +25,7 @@ str host
 int port
 func new_client
 func close_client
+func request_listener
 boolean debug
 ]]
 app.new_app = function(config)
@@ -44,6 +45,8 @@ app.new_app = function(config)
 
         new_client = config.new_client,
         close_client = config.close_client,
+
+        request_listener = config.request_listener,
 
         clients = {},
         ip_counts = {},
@@ -168,6 +171,9 @@ app.update = function(dt)
             elseif data then
                 if m.debug then
                     print("app: "..m.name, client_data.ip..":"..client_data.port, data)
+                end
+                if m.request_listener then
+                    m.request_listener(data)
                 end
 
                 local response
