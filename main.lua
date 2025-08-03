@@ -24,7 +24,15 @@ function love.load()
     main_router:new({
         validate = {text = {"string","nil"}},
         responce_validate = {"string"},
+        async = true,
         prefix = "echo", fun = function(args, client)
+            if args.text == "hello world2" then
+                local start = os.time()
+                while os.time() - start < 2 do
+                    coroutine.yield()
+                end
+                client:send(args.text.."\n")
+            end
             return args.text or "no text provided"
         end
     })
@@ -42,7 +50,7 @@ function love.load()
         end
     })
 
-    client:noawait_fetch("api/echo", {text = "hello world"})
+    client:noawait_fetch("api/echo", {text = "hello world2"})
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 end

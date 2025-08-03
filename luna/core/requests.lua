@@ -11,6 +11,7 @@ req.new = function(router, config)
         error_handler = config.error_handler or function(message) 
             print("Error in request prefix: "..req_data.prefix.." error: "..message) 
         end,
+        async = config.async,
         router = router
     }
 
@@ -121,6 +122,7 @@ local function validate_args(validate_config, args)
     return true
 end
 
+local workers = require("luna.core.workers")
 req.process = function(router, client_data, data)
     local request, err = parse_request(data)
     if not request then
@@ -153,6 +155,12 @@ req.process = function(router, client_data, data)
             end
             return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
         end
+    end
+
+    if request_handler.async then
+        local worker = workers.getFreeWorker()
+        coroutine.resume(worker, request_handler, request, client_data)
+        return {request = request.path, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
     end
 
     local ok, result = pcall(request_handler.fun, request.args, client_data.client)

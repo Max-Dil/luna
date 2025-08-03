@@ -246,7 +246,6 @@ app.update = function(dt)
                 if app_data.listener then
                     app_data.listener(line)
                 end
-                print("["..name.."] Received: "..line)
             elseif err and err ~= "timeout" then
                 app_data.connected = false
                 app_data.error_handler("Receive failed: "..err)
