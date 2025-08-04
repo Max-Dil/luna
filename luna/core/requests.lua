@@ -108,7 +108,6 @@ local function parse_request(data)
         args_str = remaining
     end
 
-    print(json.encode(args))
     return {
         path = path,
         args = args
