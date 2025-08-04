@@ -142,14 +142,14 @@ app.update = function(dt)
                 if request_handler.error_handler then
                     request_handler.error_handler(tostring(ok2))
                 end
-                request_result = {client = client, response = {request = request.path, error = tostring(ok2), id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
             end
 
             if not ok2 then
                 if request_handler.error_handler then
                     request_handler.error_handler(result)
                 end
-                request_result = {client = client, response = {request = request.path, error = tostring(ok2), id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
             end
 
             if not request_result and request_handler.responce_validate then
@@ -162,12 +162,12 @@ app.update = function(dt)
                     if request_handler.error_handler then
                         request_handler.error_handler(err_msg)
                     end
-                    request_result = {client = client, response = {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                    request_result = {client = client, response = {request = request.path, error = err_msg, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
                 end
             end
 
             if not request_result then
-                request_result = {client = client, response = {request = request.path, response = result, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                request_result = {client = client, response = {request = request.path, response = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
             end
 
             if request_result and request_result.response then
@@ -268,7 +268,7 @@ app.update = function(dt)
                 if type(response) == "table" and (response.request or response.error or response.response or response.id) then
                     response_to_send = response
                 else
-                    response_to_send = {request = "unknown", response = response, id = "unknown id", __luna = true}
+                    response_to_send = {request = "unknown", response = response, id = "unknown id", __luna = true, time = 0}
                 end
 
                 if not response_to_send.__noawait then

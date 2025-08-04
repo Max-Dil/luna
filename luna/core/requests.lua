@@ -183,14 +183,14 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+            return {request = request.path, error = err_msg, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
         end
     end
 
     if request_handler.async then
         local worker = workers.getFreeWorker()
         coroutine.resume(worker, request_handler, request, client_data)
-        return {request = request.path, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
+        return {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
     end
 
     local ok, result = pcall(request_handler.fun, request.args, client_data.client)
@@ -198,7 +198,7 @@ req.process = function(router, client_data, data)
         if request_handler.error_handler then
             request_handler.error_handler(result)
         end
-        return {request = request.path, error = result, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        return {request = request.path, error = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
     end
 
     if request_handler.responce_validate then
@@ -211,11 +211,11 @@ req.process = function(router, client_data, data)
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
-            return {request = request.path, error = err_msg, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+            return {request = request.path, error = err_msg, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
         end
     end
 
-    return {request = request.path, response = result, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+    return {request = request.path, response = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
 end
 
 return req

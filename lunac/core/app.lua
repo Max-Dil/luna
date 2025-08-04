@@ -9,7 +9,7 @@ local function parse_response(line)
     if ok and type(result) == "table" then
         return result
     end
-    return {request = "unknown", response = line, id = "unknown id"}
+    return {request = "unknown", response = line, id = "unknown id", time = 0}
 end
 
 local uuid = function()
@@ -47,6 +47,39 @@ local function try_connect(app_data)
     end
 end
 
+local serelizate_request = function (args, app_data, request_id, timestamp, request)
+    local arg_parts = {}
+    for k, v in pairs(args) do
+        local text
+        if type(v) == "string" then
+            text = "'"..v.."'"
+        elseif type(v) == "number" then
+            text = v
+        elseif type(v) == "table" then
+            local s, e = pcall(json.encode, v)
+            if not s then
+                if app_data.no_errors then
+                    app_data.error_handler("Send failed: "..e)
+                    return nil, e or "Failed to send request"
+                else
+                    error("Send failed: "..e, 2)
+                end
+            end
+            text = "<json='"..e.."'>"
+        elseif type(v) == "boolean" then
+            text = tostring(v)
+        else
+            text = "'no support "..type(v).."'"
+            error("'no support "..type(v).."'", 2)
+        end
+        table.insert(arg_parts, string.format(k.."=("..text..")"))
+    end
+    table.insert(arg_parts, "__id=('"..request_id.."')")
+    table.insert(arg_parts, "__time=('"..timestamp.."')")
+    request = request .. " " .. table.concat(arg_parts, " ")
+    return request
+end
+
 local class = {
     fetch = function(app_data, path, args, timeout)
         if type(app_data) == "string" then
@@ -63,37 +96,11 @@ local class = {
         end
 
         local request_id = uuid()
+        local timestamp = tostring(os.time())
 
         local request = path
         if args then
-            local arg_parts = {}
-            for k, v in pairs(args) do
-                local text
-                if type(v) == "string" then
-                    text = "'"..v.."'"
-                elseif type(v) == "number" then
-                    text = v
-                elseif type(v) == "table" then
-                    local s, e = pcall(json.encode, v)
-                    if not s then
-                        if app_data.no_errors then
-                            app_data.error_handler("Send failed: "..e)
-                            return nil, e or "Failed to send request"
-                        else
-                            error("Send failed: "..e, 2)
-                        end
-                    end
-                    text = "<json='"..e.."'>"
-                elseif type(v) == "boolean" then
-                    text = tostring(v)
-                else
-                    text = "'no support "..type(v).."'"
-                    error("'no support "..type(v).."'", 2)
-                end
-                table.insert(arg_parts, string.format(k.."=("..text..")"))
-            end
-            table.insert(arg_parts, "__id=('"..request_id.."')")
-            request = request .. " " .. table.concat(arg_parts, " ")
+            request = serelizate_request(args, app_data, request_id, timestamp, request)
         end
 
         local success, err = app_data.client:send(request .. "\n")
@@ -132,7 +139,7 @@ local class = {
             local line, err = app_data.client:receive("*l")
             if line then
                 local response = parse_response(line)
-                if response.__luna and response.request == path and response.id == request_id then
+                if response.__luna and response.request == path and response.id == request_id and response.time == timestamp then
                     if response.error then
                         return nil, response.error
                     end
@@ -178,38 +185,11 @@ local class = {
         end
 
         local request_id = uuid()
+        local timestamp = os.time()
 
         local request = path
         if args then
-            local arg_parts = {}
-            for k, v in pairs(args) do
-                local text
-                if type(v) == "string" then
-                    text = "'"..v.."'"
-                elseif type(v) == "number" then
-                    text = v
-                elseif type(v) == "table" then
-                    local s, e = pcall(json.encode, v)
-                    if not s then
-                        if app_data.no_errors then
-                            app_data.error_handler("Send failed: "..e)
-                            return nil, e or "Failed to send request"
-                        else
-                            error("Send failed: "..e, 2)
-                        end
-                    end
-                    text = "<json='"..e.."'>"
-                elseif type(v) == "boolean" then
-                    text = tostring(v)
-                else
-                    text = "'no support "..type(v).."'"
-                    error("'no support "..type(v).."'", 2)
-                end
-                table.insert(arg_parts, string.format(k.."=("..text..")"))
-            end
-            table.insert(arg_parts, "__id=('"..request_id.."')")
-            table.insert(arg_parts, "__noawait=(true)")
-            request = request .. " " .. table.concat(arg_parts, " ")
+            request = serelizate_request(args, app_data, request_id, timestamp, request)
         end
 
         local success, err = app_data.client:send(request .. "\n")
