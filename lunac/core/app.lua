@@ -73,6 +73,17 @@ local class = {
                     text = "'"..v.."'"
                 elseif type(v) == "number" then
                     text = v
+                elseif type(v) == "table" then
+                    local s, e = pcall(json.encode, v)
+                    if not s then
+                        if app_data.no_errors then
+                            app_data.error_handler("Send failed: "..e)
+                            return nil, e or "Failed to send request"
+                        else
+                            error("Send failed: "..e, 2)
+                        end
+                    end
+                    text = "<json='"..e.."'>"
                 elseif type(v) == "boolean" then
                     text = tostring(v)
                 else
@@ -177,6 +188,17 @@ local class = {
                     text = "'"..v.."'"
                 elseif type(v) == "number" then
                     text = v
+                elseif type(v) == "table" then
+                    local s, e = pcall(json.encode, v)
+                    if not s then
+                        if app_data.no_errors then
+                            app_data.error_handler("Send failed: "..e)
+                            return nil, e or "Failed to send request"
+                        else
+                            error("Send failed: "..e, 2)
+                        end
+                    end
+                    text = "<json='"..e.."'>"
                 elseif type(v) == "boolean" then
                     text = tostring(v)
                 else

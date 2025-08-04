@@ -1,4 +1,5 @@
 local req = {}
+local json = require("luna.libs.json")
 
 req.new = function(router, config)
     local req_data
@@ -40,44 +41,74 @@ local function parse_request(data)
     data = data:gsub("^%s*(.-)%s*$", "%1")
 
     local path, args_str = data:match("^(%S+)%s*(.*)$")
-    if not path then return nil, "Invalid request format" end
+    if not path then
+        return nil, "Invalid request format"
+    end
 
     local args = {}
 
     while args_str and args_str ~= "" do
         local key, value, remaining
 
-        key, value, remaining = args_str:match("^(%S+)=%('([^']*)'%)%s*(.*)$")
-        
-        if not key then
-            key, value, remaining = args_str:match("^(%S+)=%(\"([^\"]*)\"%)%s*(.*)$")
+        -- JSON: key=<json='encoded_json'>
+        key, value, remaining = args_str:match("^(%S+)=%(<json='([^']*)'>%)%s*(.*)$")
+        if key then
+            local success, decoded = pcall(json.decode, value)
+            if success then
+                args[key] = decoded
+            else
+                return nil, "Invalid JSON in parameter '"..key.."': "..decoded
+            end
         end
 
+        -- String: key=('value')
+        if not key then
+            key, value, remaining = args_str:match("^(%S+)=%('([^']*)'%)%s*(.*)$")
+            if key then
+                args[key] = value
+            end
+        end
+
+        -- String (double quotes): key=("value")
+        if not key then
+            key, value, remaining = args_str:match("^(%S+)=%(\"([^\"]*)\"%)%s*(.*)$")
+            if key then
+                args[key] = value
+            end
+        end
+
+        -- Boolean: key=(true) or key=(false)
         if not key then
             key, value, remaining = args_str:match("^(%S+)=%(true%)%s*(.*)$")
             if key then
-                value = true
+                args[key] = true
             else
                 key, value, remaining = args_str:match("^(%S+)=%(false%)%s*(.*)$")
                 if key then
-                    value = false
+                    args[key] = false
                 end
             end
         end
 
+        -- Number: key=(123.45)
         if not key then
             key, value, remaining = args_str:match("^(%S+)=%(([%d%.]+)%)%s*(.*)$")
             if key then
                 value = tonumber(value)
+                if value then
+                    args[key] = value
+                else
+                    return nil, "Invalid number in parameter '"..key.."': "..tostring(value)
+                end
             end
         end
 
         if not key then break end
 
-        args[key] = value
         args_str = remaining
     end
 
+    print(json.encode(args))
     return {
         path = path,
         args = args

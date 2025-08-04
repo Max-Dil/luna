@@ -10,11 +10,10 @@ function love.load()
         name = "test server",
         max_ip_connected = 20,
         no_errors = true,
-        debug = false,
-
-        request_listener = function (req)
-            print(req)
-        end
+        debug = true,
+        -- request_listener = function (req)
+        --     print(req)
+        -- end
     })
 
     local main_router = app:new_router({
@@ -51,7 +50,7 @@ function love.load()
     })
 
     client:noawait_fetch("api/echo", {text = "hello world2"})
-    local response = client:fetch("api/echo", {text = "hello world"})
+    local response = client:fetch("api/echo", {text = "hello world", test = {"test", 550}})
     print("Echo data: "..response)
 end
 
