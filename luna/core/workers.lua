@@ -5,8 +5,6 @@ local json = require("luna.libs.json")
 local function request_coro()
     while true do
         local request_handler, request, client_data = coroutine.yield()
-        local client = client_data.client
-        local request_result = nil
 
         local coro = coroutine.create(request_handler.fun)
         running_funs[coro] = {request_handler, request, client_data}

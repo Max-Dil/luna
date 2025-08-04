@@ -49,63 +49,71 @@ local function parse_request(data)
 
     while args_str and args_str ~= "" do
         local key, value, remaining
+        local matched = false
 
-        -- JSON: key=<json='encoded_json'>
-        key, value, remaining = args_str:match("^(%S+)=%(<json='([^']*)'>%)%s*(.*)$")
+        -- JSON: key=<json='["test",550]'>
+        key, value, remaining = args_str:match("^(%S+)=<json='([^']*)'>%s*(.*)$")
         if key then
             local success, decoded = pcall(json.decode, value)
             if success then
                 args[key] = decoded
+                args_str = remaining
+                matched = true
             else
                 return nil, "Invalid JSON in parameter '"..key.."': "..decoded
             end
         end
 
-        -- String: key=('value')
-        if not key then
-            key, value, remaining = args_str:match("^(%S+)=%('([^']*)'%)%s*(.*)$")
+        if not matched then
+            -- String: key='value'
+            key, value, remaining = args_str:match("^(%S+)='([^']*)'%s*(.*)$")
             if key then
                 args[key] = value
+                args_str = remaining
+                matched = true
             end
         end
 
-        -- String (double quotes): key=("value")
-        if not key then
-            key, value, remaining = args_str:match("^(%S+)=%(\"([^\"]*)\"%)%s*(.*)$")
-            if key then
-                args[key] = value
-            end
-        end
-
-        -- Boolean: key=(true) or key=(false)
-        if not key then
-            key, value, remaining = args_str:match("^(%S+)=%(true%)%s*(.*)$")
+        if not matched then
+            -- Boolean: key=True or key=False
+            key, remaining = args_str:match("^(%S+)=True%s*(.*)$")
             if key then
                 args[key] = true
-            else
-                key, value, remaining = args_str:match("^(%S+)=%(false%)%s*(.*)$")
-                if key then
-                    args[key] = false
-                end
+                args_str = remaining
+                matched = true
             end
         end
 
-        -- Number: key=(123.45)
-        if not key then
-            key, value, remaining = args_str:match("^(%S+)=%(([%d%.]+)%)%s*(.*)$")
+        if not matched then
+            key, remaining = args_str:match("^(%S+)=False%s*(.*)$")
+            if key then
+                args[key] = false
+                args_str = remaining
+                matched = true
+            end
+        end
+
+        if not matched then
+            -- Number: key=100
+            key, value, remaining = args_str:match("^(%S+)=([%d%.]+)%s*(.*)$")
             if key then
                 value = tonumber(value)
                 if value then
                     args[key] = value
+                    args_str = remaining
+                    matched = true
                 else
                     return nil, "Invalid number in parameter '"..key.."': "..tostring(value)
                 end
             end
         end
 
-        if not key then break end
-
-        args_str = remaining
+        if not matched then
+            key, remaining = args_str:match("^(%S+)%s*(.*)$")
+            if not key then break end
+            args[key] = true
+            args_str = remaining
+        end
     end
 
     return {

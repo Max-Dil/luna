@@ -42,7 +42,7 @@ function love.load()
     })
 
     client:noawait_fetch("api/echo", {text = "hello world2"})
-    local response = client:fetch("api/echo", {text = "hello world", test = {"test", 550}})
+    local response = client:fetch("api/echo", {text = "hello world", test = {"test", 550}, bot = 100, t = true})
     print("Echo data: "..response)
 end
 

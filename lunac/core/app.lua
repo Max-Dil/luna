@@ -67,15 +67,19 @@ local serelizate_request = function (args, app_data, request_id, timestamp, requ
             end
             text = "<json='"..e.."'>"
         elseif type(v) == "boolean" then
-            text = tostring(v)
+            if v then
+                text = "True"
+            else
+                text = "False"
+            end
         else
             text = "'no support "..type(v).."'"
             error("'no support "..type(v).."'", 2)
         end
-        table.insert(arg_parts, string.format(k.."=("..text..")"))
+        table.insert(arg_parts, string.format(k.."="..text))
     end
-    table.insert(arg_parts, "__id=('"..request_id.."')")
-    table.insert(arg_parts, "__time=('"..timestamp.."')")
+    table.insert(arg_parts, "__id='"..request_id.."'")
+    table.insert(arg_parts, "__time='"..timestamp.."'")
     request = request .. " " .. table.concat(arg_parts, " ")
     return request
 end
