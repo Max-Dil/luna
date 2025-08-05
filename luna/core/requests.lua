@@ -160,7 +160,6 @@ local function validate_args(validate_config, args)
     return true
 end
 
-local workers = require("luna.core.workers")
 req.process = function(router, client_data, data)
     local request, err = parse_request(data)
     if not request then
@@ -196,8 +195,8 @@ req.process = function(router, client_data, data)
     end
 
     if request_handler.async then
-        local worker = workers.getFreeWorker()
-        coroutine.resume(worker, request_handler, request, client_data)
+        local coro = coroutine.create(request_handler.fun)
+        router.app.running_funs[coro] = {request_handler, request, client_data}
         return {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
     end
 

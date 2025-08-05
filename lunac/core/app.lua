@@ -47,7 +47,7 @@ local function try_connect(app_data)
     end
 end
 
-local serelizate_request = function (args, app_data, request_id, timestamp, request)
+local serelizate_request = function (args, app_data, request_id, timestamp, request, noawait)
     local arg_parts = {}
     for k, v in pairs(args) do
         local text
@@ -80,6 +80,9 @@ local serelizate_request = function (args, app_data, request_id, timestamp, requ
     end
     table.insert(arg_parts, "__id='"..request_id.."'")
     table.insert(arg_parts, "__time='"..timestamp.."'")
+    if noawait then
+        table.insert(arg_parts, "__noawait=True")
+    end
     request = request .. " " .. table.concat(arg_parts, " ")
     return request
 end
@@ -104,7 +107,7 @@ local class = {
 
         local request = path
         if args then
-            request = serelizate_request(args, app_data, request_id, timestamp, request)
+            request = serelizate_request(args, app_data, request_id, timestamp, request, false)
         end
 
         local success, err = app_data.client:send(request .. "\n")
@@ -193,7 +196,7 @@ local class = {
 
         local request = path
         if args then
-            request = serelizate_request(args, app_data, request_id, timestamp, request)
+            request = serelizate_request(args, app_data, request_id, timestamp, request, true)
         end
 
         local success, err = app_data.client:send(request .. "\n")

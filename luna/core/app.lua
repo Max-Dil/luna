@@ -52,6 +52,8 @@ app.new_app = function(config)
         ip_counts = {},
         routers = {},
 
+        running_funs = {},
+
         get_clients = function ()
             local clients = {}
             for key, value in pairs(app_data.clients) do
@@ -128,64 +130,62 @@ local function validate_value(value, expected_types)
     return false
 end
 
-local workers = require("luna.core.workers")
 app.update = function(dt)
 
-    for coro, data in pairs(workers.running_funs) do
-        local request_handler, request, client_data = data[1], data[2], data[3]
-        local client = client_data.client
-        local request_result = nil
+    for key, m in pairs(apps) do
+        for coro, data in pairs(m.running_funs) do
+            local request_handler, request, client_data = data[1], data[2], data[3]
+            local client = client_data.client
+            local request_result = nil
 
-        local ok, ok2, result = pcall(coroutine.resume, coro, request.args, client)
-        if result then
-            if not ok then
-                if request_handler.error_handler then
-                    request_handler.error_handler(tostring(ok2))
-                end
-                request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
-            end
-
-            if not ok2 then
-                if request_handler.error_handler then
-                    request_handler.error_handler(result)
-                end
-                request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
-            end
-
-            if not request_result and request_handler.responce_validate then
-                if not validate_value(result, request_handler.responce_validate) then
-                    local expected_str = table.concat(request_handler.responce_validate, " or ")
-                    local actual_type = type(result)
-                    local err_msg = string.format("Response expected to be %s, got %s (%s)", 
-                        expected_str, actual_type, tostring(result))
-
+            local ok, ok2, result = pcall(coroutine.resume, coro, request.args, client)
+            if result then
+                if not ok then
                     if request_handler.error_handler then
-                        request_handler.error_handler(err_msg)
+                        request_handler.error_handler(tostring(ok2))
                     end
-                    request_result = {client = client, response = {request = request.path, error = err_msg, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                    request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
                 end
-            end
 
-            if not request_result then
-                request_result = {client = client, response = {request = request.path, response = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
-            end
+                if not ok2 then
+                    if request_handler.error_handler then
+                        request_handler.error_handler(result)
+                    end
+                    request_result = {client = client, response = {request = request.path, error = tostring(ok2), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                end
 
-            if request_result and request_result.response then
-                local response = request_result.response
-                if not response.__noawait then
-                    local ok, send_err = pcall(function()
-                        client:send(json.encode(response) .. "\n")
-                    end)
-                    if not ok then
-                        print("Error in async request: "..send_err.."  id:"..response.id.."  path:"..response.request)
+                if not request_result and request_handler.responce_validate then
+                    if not validate_value(result, request_handler.responce_validate) then
+                        local expected_str = table.concat(request_handler.responce_validate, " or ")
+                        local actual_type = type(result)
+                        local err_msg = string.format("Response expected to be %s, got %s (%s)", 
+                            expected_str, actual_type, tostring(result))
+
+                        if request_handler.error_handler then
+                            request_handler.error_handler(err_msg)
+                        end
+                        request_result = {client = client, response = {request = request.path, error = err_msg, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
                     end
                 end
-                workers.running_funs[coro] = nil
+
+                if not request_result then
+                    request_result = {client = client, response = {request = request.path, response = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}}
+                end
+
+                if request_result and request_result.response then
+                    local response = request_result.response
+                    if not response.__noawait then
+                        local ok, send_err = pcall(function()
+                            client:send(json.encode(response) .. "\n")
+                        end)
+                        if not ok then
+                            print("Error in async request: "..send_err.."  id:"..response.id.."  path:"..response.request)
+                        end
+                    end
+                    m.running_funs[coro] = nil
+                end
             end
         end
-    end
-
-    for key, m in pairs(apps) do
         local new_client, err = m.server:accept()
         if err and err ~= "timeout" then
             handle_error(m, "Error accepting connection: "..err)
