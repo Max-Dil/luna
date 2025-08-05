@@ -37,7 +37,11 @@ req.new = function(router, config)
             print("Error in request prefix: "..req_data.prefix.." error: "..message) 
         end,
         async = config.async,
-        router = router
+        router = router,
+        max_message_size = config.max_message_size,
+        message_penalty = config.message_penalty or "timeout",
+        timeout_duration = config.timeout_duration,
+        middlewares = config.middlewares or {},
     }
 
     router.requests[config.prefix] = req_data
@@ -172,7 +176,7 @@ end
 local function validate_args(validate_config, args)
     for key, expected_types in pairs(validate_config) do
         local value = args[key]
-        
+
         if not validate_value(value, expected_types) then
             local expected_str = table.concat(expected_types, " or ")
             local actual_type = type(value)
@@ -180,17 +184,76 @@ local function validate_args(validate_config, args)
                 key, expected_str, actual_type, tostring(value))
         end
     end
-    
+
     return true
 end
 
+local function apply_penalty(app, client_data, penalty, timeout_duration, error_msg)
+    if penalty == "closed" then
+        for i, client in ipairs(app.clients) do
+            if client.ip == client_data.ip and client.port == client_data.port then
+                app.ip_counts[client_data.ip] = (app.ip_counts[client_data.ip] or 1) - 1
+                if app.ip_counts[client_data.ip] <= 0 then
+                    app.ip_counts[client_data.ip] = nil
+                end
+                if app.debug then
+                    print("app: "..app.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port.." due to penalty")
+                end
+                table.remove(app.clients, i)
+                if app.close_client then
+                    local ok, cb_err = pcall(app.close_client, client_data.client)
+                    if not ok then
+                        print("Error in close_client callback: "..cb_err)
+                    end
+                end
+                break
+            end
+        end
+        return {error = error_msg, __luna = true}
+    elseif penalty == "timeout" then
+        app.blocked_ips = app.blocked_ips or {}
+        app.blocked_ips[client_data.ip] = os.time() + timeout_duration
+        if app.debug then
+            print("app: "..app.name, "Client timed out ip: "..client_data.ip..":"..client_data.port.." for "..timeout_duration.." seconds")
+        end
+        return {error = error_msg.." Timed out for "..timeout_duration.." seconds", __luna = true}
+    end
+    return {error = error_msg, __luna = true}
+end
+
 req.process = function(router, client_data, data)
+    router.app.blocked_ips = router.app.blocked_ips or {}
+    if router.app.blocked_ips[client_data.ip] then
+        if os.time() < router.app.blocked_ips[client_data.ip] then
+            return {error = "Client IP "..client_data.ip.." is temporarily blocked", __luna = true}
+        else
+            router.app.blocked_ips[client_data.ip] = nil
+        end
+    end
+
+    local request_handler
+    local path_parts = split(data:match("^(%S+)") or "", "/")
+    if #path_parts >= 2 then
+        local router_prefix = path_parts[1]
+        local request_prefix = path_parts[2]
+        local router_data = router.app.routers[router_prefix]
+        if router_data then
+            request_handler = router_data.requests[request_prefix]
+        end
+    end
+
+    if request_handler and request_handler.max_message_size then
+        if #data > request_handler.max_message_size then
+            local error_msg = "Message size exceeds limit of "..request_handler.max_message_size.." bytes"
+            return apply_penalty(router.app, client_data, request_handler.message_penalty, request_handler.timeout_duration, error_msg)
+        end
+    end
+
     local request, err = parse_request(data)
     if not request then
         return nil, err
     end
 
-    local path_parts = split(request.path, "/")
     if #path_parts < 2 then
         return nil, "Invalid path format"
     end
@@ -203,9 +266,23 @@ req.process = function(router, client_data, data)
         return nil, "No router found for prefix: "..router_prefix
     end
 
-    local request_handler = router_data.requests[request_prefix]
+    request_handler = router_data.requests[request_prefix]
     if not request_handler or not request_handler.fun then
         return nil, "No handler found for path: "..request.path
+    end
+
+    local context = { request = request, client = client_data.client, stop = false, ip = client_data.ip, port = client_data.port }
+    for _, middleware in ipairs(request_handler.middlewares) do
+        local ok, result = pcall(middleware, context, true)
+        if not ok then
+            if request_handler.error_handler then
+                request_handler.error_handler("Middleware error: "..result)
+            end
+            return {request = request.path, error = "Middleware error: "..result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        end
+        if context.stop then
+            return result or {request = request.path, error = "Request stopped by middleware", time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        end
     end
 
     if request_handler.validate then
@@ -218,26 +295,45 @@ req.process = function(router, client_data, data)
         end
     end
 
+    local result
     if request_handler.async then
         local coro = coroutine.create(request_handler.fun)
         router.app.running_funs[coro] = {request_handler, request, client_data}
-        return {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
-    end
-
-    local ok, result = pcall(request_handler.fun, request.args, client_data.client)
-    if not ok then
-        if request_handler.error_handler then
-            request_handler.error_handler(result)
+        result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
+    else
+        local ok, handler_result = pcall(request_handler.fun, request.args, client_data.client)
+        if not ok then
+            if request_handler.error_handler then
+                request_handler.error_handler(handler_result)
+            end
+            return {request = request.path, error = handler_result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
         end
-        return {request = request.path, error = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        result = {request = request.path, response = handler_result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
     end
 
-    if request_handler.responce_validate then
-        if not validate_value(result, request_handler.responce_validate) then
+    context.response = result
+    for _, middleware in ipairs(request_handler.middlewares) do
+        local ok, mw_result = pcall(middleware, context, false)
+        if not ok then
+            if request_handler.error_handler then
+                request_handler.error_handler("Middleware error: "..mw_result)
+            end
+            return {request = request.path, error = "Middleware error: "..mw_result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        end
+        if mw_result then
+            result = mw_result
+        end
+        if context.stop then
+            return result or {request = request.path, error = "Request stopped by middleware", time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+        end
+    end
+
+    if not request_handler.async and request_handler.responce_validate then
+        if not validate_value(result.response, request_handler.responce_validate) then
             local expected_str = table.concat(request_handler.responce_validate, " or ")
-            local actual_type = type(result)
+            local actual_type = type(result.response)
             local err_msg = string.format("Response expected to be %s, got %s (%s)", 
-                expected_str, actual_type, tostring(result))
+                expected_str, actual_type, tostring(result.response))
             
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
@@ -246,7 +342,7 @@ req.process = function(router, client_data, data)
         end
     end
 
-    return {request = request.path, response = result, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+    return result
 end
 
 return req

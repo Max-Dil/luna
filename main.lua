@@ -1,6 +1,7 @@
 _G.love = love
 
 local luna, lunac
+
 function love.load()
     luna = require("luna")
 
@@ -20,12 +21,24 @@ function love.load()
         prefix = "api",
     })
 
-    main_router:new({
-        validate = {text = {"string","nil"}},
-        responce_validate = {"string"},
-        prefix = "echo", fun = function(args, client)
-            return args.text or "no text provided"
+    local echo_middleware = function(context, is_pre)
+        if is_pre then
+            print("Middleware: Processing request for path "..context.request.path.." with args: "..require("luna.libs.json").encode(context.request.args))
+        else
+            if context.response.response then
+                context.response.response = context.response.response .. " (processed by middleware)"
+            end
         end
+    end
+
+    main_router:new({
+        validate = {text = {"string", "nil"}},
+        responce_validate = {"string"},
+        prefix = "echo",
+        fun = function(args, client)
+            return args.text or "no text provided"
+        end,
+        middlewares = {echo_middleware},
     })
 
     lunac = require("lunac")
@@ -42,11 +55,11 @@ function love.load()
     })
 
     client:noawait_fetch("api/echo", {text = "hello world2"})
-    local response = client:fetch("api/echo", {text = "hello world", test = {"test", 550}, bot = 100, t = true})
+    local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 end
 
 function love.update(dt)
-    lunac.update()
+    lunac.update(dt)
     luna.update()
 end
