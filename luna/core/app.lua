@@ -197,13 +197,11 @@ app.update = function()
 
                 if request_result and request_result.response then
                     local response = request_result.response
-                    if not response.__noawait then
-                        local ok, send_err = pcall(function()
-                            client:send(json.encode(response) .. "\n")
-                        end)
-                        if not ok then
-                            print("Error in async request: "..send_err.."  id:"..response.id.."  path:"..response.request)
-                        end
+                    local ok, send_err = pcall(function()
+                        client:send(json.encode(response) .. "\n")
+                    end)
+                    if not ok then
+                        print("Error in async request: "..send_err.."  id:"..response.id.."  path:"..response.request)
                     end
                     m.running_funs[coro] = nil
                 end
@@ -294,7 +292,7 @@ app.update = function()
                     response_to_send = {request = "unknown", response = response, id = "unknown id", __luna = true, time = 0}
                 end
 
-                if not response_to_send.__noawait then
+                if not response_to_send.no_responce then
                     local ok, send_err = pcall(function()
                         client_data.client:send(json.encode(response_to_send) .. "\n")
                     end)

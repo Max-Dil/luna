@@ -35,10 +35,11 @@ function love.load()
         validate = {text = {"string", "nil"}},
         responce_validate = {"string"},
         prefix = "echo",
+        async = true,
         fun = function(args, client)
             return args.text or "no text provided"
         end,
-        middlewares = {echo_middleware},
+        -- middlewares = {echo_middleware},
     })
 
     lunac = require("lunac")
@@ -54,7 +55,9 @@ function love.load()
         end
     })
 
-    client:noawait_fetch("api/echo", {text = "hello world2"})
+    client:noawait_fetch("api/echo", function (data, err)
+        print(data, err, 999999999)
+    end,{text = "hello world2"})
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 end

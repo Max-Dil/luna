@@ -118,7 +118,7 @@ local class = {
         end
 
         if not app_data or not app_data.connected then
-            if app_data.no_errors then
+            if app_data and app_data.no_errors then
                 app_data.error_handler("Not connected to server")
                 return nil, "Not connected to server"
             else
@@ -178,6 +178,18 @@ local class = {
                 else
                     if app_data.listener and not response.__luna then
                         app_data.listener(line)
+                    elseif response.__luna and response.__noawait then
+                        if app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+                            local callback = app_data.pending_noawait_requests[response.id].callback
+                            app_data.pending_noawait_requests[response.id] = nil
+                            if callback then
+                                if response.error then
+                                    callback(nil, response.error)
+                                else
+                                    callback(response.response, nil)
+                                end
+                            end
+                        end
                     end
                 end
             elseif err == "timeout" then
@@ -201,13 +213,13 @@ local class = {
             end
         end
     end,
-    noawait_fetch = function(app_data, path, args)
+    noawait_fetch = function(app_data, path, callback, args)
         if type(app_data) == "string" then
             app_data = apps[app_data]
         end
 
         if not app_data or not app_data.connected then
-            if app_data.no_errors then
+            if app_data and app_data.no_errors then
                 app_data.error_handler("Not connected to server")
                 return nil, "Not connected to server"
             else
@@ -216,15 +228,23 @@ local class = {
         end
 
         local request_id = uuid()
-        local timestamp = os.time()
+        local timestamp = tostring(os.time())
 
         local request = path
         if args then
             request = serelizate_request(args, app_data, request_id, timestamp, request, true)
         end
 
+        app_data.pending_noawait_requests = app_data.pending_noawait_requests or {}
+        app_data.pending_noawait_requests[request_id] = {
+            path = path,
+            timestamp = timestamp,
+            callback = callback
+        }
+
         local success, err = app_data.client:send(request .. "\n")
         if not success then
+            app_data.pending_noawait_requests[request_id] = nil
             if app_data.no_errors then
                 app_data.error_handler("Send failed: "..err)
                 return nil, err or "Failed to send request"
@@ -232,6 +252,8 @@ local class = {
                 error("Send failed: "..err, 2)
             end
         end
+
+        return request_id
     end,
 }
 
@@ -255,7 +277,7 @@ app.connect = function(config)
         reconnect_time = config.reconnect_time,
         reconnect_timer = 0,
         trying_to_reconnect = false,
-
+        pending_noawait_requests = {},
         connect_server = config.connect_server,
         disconnect_server = config.disconnect_server
     }, {__index = class})
@@ -277,7 +299,18 @@ app.update = function(dt)
         if app_data.connected then
             local line, err = app_data.client:receive("*l")
             if line then
-                if app_data.listener then
+                local response = parse_response(line)
+                if response.__luna and response.__noawait and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+                    local callback = app_data.pending_noawait_requests[response.id].callback
+                    app_data.pending_noawait_requests[response.id] = nil
+                    if callback then
+                        if response.error then
+                            callback(nil, response.error)
+                        else
+                            callback(response.response, nil)
+                        end
+                    end
+                elseif app_data.listener then
                     app_data.listener(line)
                 end
             elseif err and err ~= "timeout" then
@@ -294,6 +327,7 @@ app.update = function(dt)
                     app_data.trying_to_reconnect = true
                     app_data.reconnect_timer = 0
                 end
+                app_data.pending_noawait_requests = {}
             end
         elseif app_data.trying_to_reconnect and app_data.reconnect_time then
             app_data.reconnect_timer = app_data.reconnect_timer + dt
@@ -367,6 +401,7 @@ app.close = function(app_data)
         end
     end
 
+    app_data.pending_noawait_requests = {}
     apps[app_data.name] = nil
 end
 

@@ -299,7 +299,7 @@ req.process = function(router, client_data, data)
     if request_handler.async then
         local coro = coroutine.create(request_handler.fun)
         router.app.running_funs[coro] = {request_handler, request, client_data}
-        result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = true}
+        result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil, no_responce = true}
     else
         local ok, handler_result = pcall(request_handler.fun, request.args, client_data.client)
         if not ok then
