@@ -1,7 +1,6 @@
 _G.love = love
 
 local luna, lunac
-
 function love.load()
     luna = require("luna")
 
@@ -39,7 +38,7 @@ function love.load()
         fun = function(args, client)
             return args.text or "no text provided"
         end,
-        -- middlewares = {echo_middleware},
+        middlewares = {echo_middleware},
     })
 
     lunac = require("lunac")
@@ -56,7 +55,7 @@ function love.load()
     })
 
     client:noawait_fetch("api/echo", function (data, err)
-        print(data, err, 999999999)
+        print(data, err)
     end,{text = "hello world2"})
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)

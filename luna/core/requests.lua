@@ -122,8 +122,8 @@ local function parse_request(data)
         end
 
         if not matched then
-            -- Number: key=100
-            key, value, remaining = args_str:match("^(%S+)=([%d%.]+)%s*(.*)$")
+            -- Number: key=100 or key=-100
+            key, value, remaining = args_str:match("^(%S+)=([%-%d%.]+)%s*(.*)$")
             if key then
                 value = tonumber(value)
                 if value then
