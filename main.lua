@@ -9,11 +9,11 @@ function love.load()
         port = 8081,
         name = "test server",
         max_ip_connected = 20,
-        no_errors = true,
+        -- no_errors = true,
         debug = true,
-        -- request_listener = function (req)
-        --     print(req)
-        -- end
+        request_listener = function (req)
+            -- print("req: "..req)
+        end
     })
 
     local main_router = app:new_router({
@@ -55,10 +55,13 @@ function love.load()
     })
 
     client:noawait_fetch("api/echo", function (data, err)
-        print(data, err)
+        print("noawait_fetch response: ", data, "err:" ..tostring(err))
     end,{text = "hello world2"})
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
+
+    -- local response = client:fetch("api/echo", {text = string.rep("hello world",300000)})
+    -- print("size: "..#response, " size wait: "..#string.rep("hello world",300000))
 end
 
 function love.update(dt)

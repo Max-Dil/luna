@@ -24,19 +24,21 @@ SOFTWARE.
 
 local socket = require("socket")
 local json = require("lunac.libs.json")
+local message_manager = require("lunac.libs.udp_messages")
 
 local app = {}
 local apps = {}
+local PING_INTERVAL = 2
 
 local function parse_response(line)
     local ok, result = pcall(json.decode, line)
     if ok and type(result) == "table" then
         return result
     end
-    return {request = "unknown", response = line, id = "unknown id", time = 0}
+    return { request = "unknown", response = line, id = "unknown id", time = 0 }
 end
 
-local uuid = function()
+local function uuid()
     local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
     return string.gsub(template, '[xy]', function(c)
         local v = (c == 'x') and math.random(0, 15) or math.random(8, 11)
@@ -45,23 +47,23 @@ local uuid = function()
 end
 
 local function try_connect(app_data)
-    local client, err = socket.connect(app_data.host, app_data.port)
+    local client, err = socket.udp()
     if client then
         client:settimeout(0)
         app_data.client = client
         app_data.connected = true
         app_data.trying_to_reconnect = false
-        print("Connected to "..app_data.host..":"..app_data.port)
+        print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
             local ok, cb_err = pcall(app_data.connect_server)
             if not ok then
-                app_data.error_handler("Error in connect_server callback: "..cb_err)
+                app_data.error_handler("Error in connect_server callback: " .. cb_err)
             end
         end
         return true
     else
         if not app_data.trying_to_reconnect then
-            app_data.error_handler("Connection failed: "..err)
+            app_data.error_handler("UDP socket creation failed: " .. err)
             if app_data.reconnect_time then
                 app_data.trying_to_reconnect = true
                 app_data.reconnect_timer = 0
@@ -71,25 +73,25 @@ local function try_connect(app_data)
     end
 end
 
-local serelizate_request = function (args, app_data, request_id, timestamp, request, noawait)
+local function serelizate_request(args, app_data, request_id, timestamp, request, noawait)
     local arg_parts = {}
     for k, v in pairs(args) do
         local text
         if type(v) == "string" then
-            text = "'"..v.."'"
+            text = "'" .. v .. "'"
         elseif type(v) == "number" then
             text = v
         elseif type(v) == "table" then
             local s, e = pcall(json.encode, v)
             if not s then
                 if app_data.no_errors then
-                    app_data.error_handler("Send failed: "..e)
-                    return nil, e or "Failed to send request"
+                    app_data.error_handler("Serialization failed: " .. e)
+                    return nil, e or "Failed to serialize request"
                 else
-                    error("Send failed: "..e, 2)
+                    error("Serialization failed: " .. e, 2)
                 end
             end
-            text = "<json='"..e.."'>"
+            text = "<json='" .. e .. "'>"
         elseif type(v) == "boolean" then
             if v then
                 text = "True"
@@ -97,13 +99,13 @@ local serelizate_request = function (args, app_data, request_id, timestamp, requ
                 text = "False"
             end
         else
-            text = "'no support "..type(v).."'"
-            error("'no support "..type(v).."'", 2)
+            text = "'no support " .. type(v) .. "'"
+            error("'no support " .. type(v) .. "'", 2)
         end
-        table.insert(arg_parts, string.format(k.."="..text))
+        table.insert(arg_parts, string.format(k .. "=" .. text))
     end
-    table.insert(arg_parts, "__id='"..request_id.."'")
-    table.insert(arg_parts, "__time='"..timestamp.."'")
+    table.insert(arg_parts, "__id='" .. request_id .. "'")
+    table.insert(arg_parts, "__time='" .. timestamp .. "'")
     if noawait then
         table.insert(arg_parts, "__noawait=True")
     end
@@ -132,87 +134,113 @@ local class = {
         local request = path
         if args then
             request = serelizate_request(args, app_data, request_id, timestamp, request, false)
+            if not request then
+                return nil, "Failed to serialize request"
+            end
         end
 
-        local success, err = app_data.client:send(request .. "\n")
+        app_data.pending_requests = app_data.pending_requests or {}
+        app_data.pending_requests[request_id] = {
+            path = path,
+            timestamp = timestamp,
+            start_time = socket.gettime()
+        }
+
+        local success, err = pcall(app_data.socket.send_message, request, app_data.host, app_data.port)
         if not success then
+            app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
-                app_data.error_handler("Send failed: "..err)
+                app_data.error_handler("Send failed: " .. err)
                 return nil, err or "Failed to send request"
             else
-                error("Send failed: "..err, 2)
+                error("Send failed: " .. err, 2)
             end
         end
 
         local start_time = socket.gettime()
         timeout = timeout or 5
 
+        local final_response = nil
+        local final_error = nil
+
         while true do
             if app_data.server then
-                app_data.server.update()
+                app_data.server.update(app_data.dt)
             end
 
             if not app_data.connected then
                 if app_data.reconnect_time then
                     if try_connect(app_data) then
-                        success, err = app_data.client:send(request .. "\n")
+                        success, err = pcall(app_data.socket.send_message, app_data.client, request, app_data.host,
+                            app_data.port, app_data.dt)
                         if not success then
+                            app_data.pending_requests[request_id] = nil
                             return nil, err or "Failed to resend request after reconnect"
                         end
                     else
+                        app_data.pending_requests[request_id] = nil
                         return nil, "Disconnected and reconnect failed"
                     end
                 else
+                    app_data.pending_requests[request_id] = nil
                     return nil, "Disconnected"
                 end
             end
 
-            local line, err = app_data.client:receive("*l")
-            if line then
-                local response = parse_response(line)
+            app_data.socket.update(app_data.client, app_data.dt)
+
+            local messages = app_data.socket.receive_message(app_data.client)
+            for _, msg in ipairs(messages) do
+                local response = parse_response(msg.message)
+
                 if response.__luna and response.request == path and response.id == request_id and response.time == timestamp then
+                    app_data.pending_requests[request_id] = nil
                     if response.error then
-                        return nil, response.error
+                        final_error = response.error
+                    else
+                        final_response = response.response
                     end
-                    return response.response
-                else
-                    if app_data.listener and not response.__luna then
-                        app_data.listener(line)
-                    elseif response.__luna and response.__noawait then
-                        if app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
-                            local callback = app_data.pending_noawait_requests[response.id].callback
-                            app_data.pending_noawait_requests[response.id] = nil
-                            if callback then
-                                if response.error then
-                                    callback(nil, response.error)
-                                else
-                                    callback(response.response, nil)
-                                end
+                elseif response.__luna and response.__noawait then
+                    if app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+                        local callback = app_data.pending_noawait_requests[response.id].callback
+                        app_data.pending_noawait_requests[response.id] = nil
+                        if callback then
+                            if response.error then
+                                callback(nil, response.error)
+                            else
+                                callback(response.response, nil)
                             end
                         end
                     end
-                end
-            elseif err == "timeout" then
-                if socket.gettime() - start_time > timeout then
-                    if app_data.no_errors then
-                        app_data.error_handler("Request timed out")
-                        return nil, "Request timed out"
-                    else
-                        error("Request timed out", 2)
+                else
+                    if app_data.listener and not response.__luna then
+                        app_data.listener(msg.message)
                     end
                 end
-                socket.sleep(0.001)
-            else
-                app_data.connected = false
+            end
+
+            if final_response or final_error then
+                break
+            end
+
+            if socket.gettime() - start_time > timeout then
+                app_data.pending_requests[request_id] = nil
                 if app_data.no_errors then
-                    app_data.error_handler("Receive failed: "..err)
-                    return nil, err or "Failed to receive response"
+                    app_data.error_handler("Request timed out")
+                    return nil, "Request timed out"
                 else
-                    error("Receive failed: "..err, 2)
+                    error("Request timed out", 2)
                 end
             end
+            socket.sleep(0.001)
         end
+
+        if final_error then
+            return nil, final_error
+        end
+        return final_response
     end,
+
     noawait_fetch = function(app_data, path, callback, args)
         if type(app_data) == "string" then
             app_data = apps[app_data]
@@ -233,6 +261,9 @@ local class = {
         local request = path
         if args then
             request = serelizate_request(args, app_data, request_id, timestamp, request, true)
+            if not request then
+                return nil, "Failed to serialize request"
+            end
         end
 
         app_data.pending_noawait_requests = app_data.pending_noawait_requests or {}
@@ -242,14 +273,14 @@ local class = {
             callback = callback
         }
 
-        local success, err = app_data.client:send(request .. "\n")
+        local success, err = pcall(app_data.socket.send_message, request, app_data.host, app_data.port)
         if not success then
             app_data.pending_noawait_requests[request_id] = nil
             if app_data.no_errors then
-                app_data.error_handler("Send failed: "..err)
+                app_data.error_handler("Send failed: " .. err)
                 return nil, err or "Failed to send request"
             else
-                error("Send failed: "..err, 2)
+                error("Send failed: " .. err, 2)
             end
         end
 
@@ -259,7 +290,7 @@ local class = {
 
 app.connect = function(config)
     if not config.host then
-        error("Error connect to app unknown host, app_name: "..config.name, 2)
+        error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
     local app_data = setmetatable({
@@ -267,8 +298,8 @@ app.connect = function(config)
         host = config.host,
         port = config.port or 433,
         no_errors = config.no_errors,
-        error_handler = config.error_handler or function(message) 
-            print("Error in app '"..config.name.."': "..message) 
+        error_handler = config.error_handler or function(message)
+            print("Error in app '" .. config.name .. "': " .. message)
         end,
         listener = config.listener,
         connected = false,
@@ -277,14 +308,18 @@ app.connect = function(config)
         reconnect_time = config.reconnect_time,
         reconnect_timer = 0,
         trying_to_reconnect = false,
+        pending_requests = {},
         pending_noawait_requests = {},
         connect_server = config.connect_server,
-        disconnect_server = config.disconnect_server
-    }, {__index = class})
+        disconnect_server = config.disconnect_server,
+        ping_timer = 0,
+        dt = 1 / 60,
+        socket = message_manager(),
+    }, { __index = class })
 
     if not try_connect(app_data) and not app_data.reconnect_time then
         if not app_data.no_errors then
-            error("Connection failed", 2)
+            error("UDP socket creation failed", 2)
         end
         return nil
     end
@@ -296,11 +331,27 @@ end
 app.update = function(dt)
     dt = dt or (1/60)
     for name, app_data in pairs(apps) do
+        app_data.dt = dt
         if app_data.connected then
-            local line, err = app_data.client:receive("*l")
-            if line then
-                local response = parse_response(line)
-                if response.__luna and response.__noawait and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+            app_data.ping_timer = app_data.ping_timer + dt
+            if app_data.ping_timer >= PING_INTERVAL then
+                local ping_request = "ping"
+                if ping_request then
+                    local success, err = pcall(app_data.socket.send_message, ping_request, app_data.host, app_data.port)
+                    if not success then
+                        app_data.error_handler("Ping send failed: "..err)
+                    end
+                end
+                app_data.ping_timer = 0
+            end
+
+            app_data.socket.update(app_data.client, dt)
+
+            local messages = app_data.socket.receive_message(app_data.client)
+            for _, msg in ipairs(messages) do
+                local response = parse_response(msg.message)
+
+                if response.__luna and response.__noawait and app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
                     local callback = app_data.pending_noawait_requests[response.id].callback
                     app_data.pending_noawait_requests[response.id] = nil
                     if callback then
@@ -310,24 +361,19 @@ app.update = function(dt)
                             callback(response.response, nil)
                         end
                     end
+                elseif response.__luna and app_data.pending_requests and app_data.pending_requests[response.id] and app_data.pending_requests[response.id].timestamp == response.time then
+                    app_data.pending_requests[response.id] = nil
                 elseif app_data.listener then
-                    app_data.listener(line)
+                    app_data.listener(msg.message)
                 end
-            elseif err and err ~= "timeout" then
-                app_data.connected = false
-                app_data.error_handler("Receive failed: "..err)
+            end
 
-                if app_data.disconnect_server then
-                    local ok, cb_err = pcall(app_data.disconnect_server, err)
-                    if not ok then
-                        app_data.error_handler("Error in disconnect_server callback: "..cb_err)
-                    end
+            local current_time = socket.gettime()
+            for request_id, req_data in pairs(app_data.pending_requests or {}) do
+                if current_time - req_data.start_time > (req_data.timeout or 5) then
+                    app_data.pending_requests[request_id] = nil
+                    app_data.error_handler("Request timed out: "..req_data.path)
                 end
-                if app_data.reconnect_time then
-                    app_data.trying_to_reconnect = true
-                    app_data.reconnect_timer = 0
-                end
-                app_data.pending_noawait_requests = {}
             end
         elseif app_data.trying_to_reconnect and app_data.reconnect_time then
             app_data.reconnect_timer = app_data.reconnect_timer + dt
@@ -362,18 +408,13 @@ app.send = function(app_data, data)
         end
     end
 
-    local success, err = app_data.client:send(data .. "\n")
+    local success, err = pcall(app_data.socket.send_message, data, app_data.host, app_data.port)
     if not success then
-        app_data.connected = false
-        if app_data.reconnect_time then
-            app_data.trying_to_reconnect = true
-            app_data.reconnect_timer = 0
-        end
         if app_data.no_errors then
-            app_data.error_handler("Send failed: "..err)
+            app_data.error_handler("Send failed: " .. err)
             return false
         else
-            error("Send failed: "..err, 2)
+            error("Send failed: " .. err, 2)
         end
     end
 
@@ -391,16 +432,17 @@ app.close = function(app_data)
         app_data.client:close()
         app_data.connected = false
         app_data.trying_to_reconnect = false
-        print("Disconnected from "..app_data.host..":"..app_data.port)
+        print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
     end
 
     if app_data.disconnect_server then
         local ok, cb_err = pcall(app_data.disconnect_server, "Close server")
         if not ok then
-            app_data.error_handler("Error in disconnect_server callback: "..cb_err)
+            app_data.error_handler("Error in disconnect_server callback: " .. cb_err)
         end
     end
 
+    app_data.pending_requests = {}
     app_data.pending_noawait_requests = {}
     apps[app_data.name] = nil
 end

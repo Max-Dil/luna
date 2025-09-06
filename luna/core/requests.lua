@@ -24,6 +24,7 @@ SOFTWARE.
 
 local req = {}
 local json = require("luna.libs.json")
+local message_manager = require("luna.libs.udp_messages")
 
 req.new = function(router, config)
     local req_data
@@ -190,23 +191,18 @@ end
 
 local function apply_penalty(app, client_data, penalty, timeout_duration, error_msg)
     if penalty == "closed" then
-        for i, client in ipairs(app.clients) do
-            if client.ip == client_data.ip and client.port == client_data.port then
-                app.ip_counts[client_data.ip] = (app.ip_counts[client_data.ip] or 1) - 1
-                if app.ip_counts[client_data.ip] <= 0 then
-                    app.ip_counts[client_data.ip] = nil
-                end
-                if app.debug then
-                    print("app: "..app.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port.." due to penalty")
-                end
-                table.remove(app.clients, i)
-                if app.close_client then
-                    local ok, cb_err = pcall(app.close_client, client_data.client)
-                    if not ok then
-                        print("Error in close_client callback: "..cb_err)
-                    end
-                end
-                break
+        app.ip_counts[client_data.ip] = (app.ip_counts[client_data.ip] or 1) - 1
+        if app.ip_counts[client_data.ip] <= 0 then
+            app.ip_counts[client_data.ip] = nil
+        end
+        if app.debug then
+            print("app: "..app.name, "Client disconnected ip: "..client_data.ip..":"..client_data.port.." due to penalty")
+        end
+        app.clients[client_data.ip..":"..client_data.port] = nil
+        if app.close_client then
+            local ok, cb_err = pcall(app.close_client, client_data)
+            if not ok then
+                print("Error in close_client callback: "..cb_err)
             end
         end
         return {error = error_msg, __luna = true}
@@ -271,7 +267,7 @@ req.process = function(router, client_data, data)
         return nil, "No handler found for path: "..request.path
     end
 
-    local context = { request = request, client = client_data.client, stop = false, ip = client_data.ip, port = client_data.port }
+    local context = { request = request, client = client_data, stop = false, ip = client_data.ip, port = client_data.port }
     for _, middleware in ipairs(request_handler.middlewares) do
         local ok, result = pcall(middleware, context, true)
         if not ok then
@@ -301,7 +297,7 @@ req.process = function(router, client_data, data)
         router.app.running_funs[coro] = {request_handler, request, client_data}
         result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil, no_responce = true}
     else
-        local ok, handler_result = pcall(request_handler.fun, request.args, client_data.client)
+        local ok, handler_result = pcall(request_handler.fun, request.args, client_data)
         if not ok then
             if request_handler.error_handler then
                 request_handler.error_handler(handler_result)
@@ -332,9 +328,8 @@ req.process = function(router, client_data, data)
         if not validate_value(result.response, request_handler.responce_validate) then
             local expected_str = table.concat(request_handler.responce_validate, " or ")
             local actual_type = type(result.response)
-            local err_msg = string.format("Response expected to be %s, got %s (%s)", 
+            local err_msg = string.format("Response expected to be %s, got %s (%s)",
                 expected_str, actual_type, tostring(result.response))
-            
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)
             end
