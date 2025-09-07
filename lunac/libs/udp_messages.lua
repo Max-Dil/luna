@@ -209,7 +209,7 @@ local function create()
         local connect = {
             socket = socket,
             ip = myip,
-            port = myport
+            port = myport,
         }
         connections[client_key] = connect
 
@@ -222,9 +222,9 @@ local function create()
         end
 
         function connect:close()
-            if connections[self.key] then
-                fragment_buffer[self.key] = nil
-                connections[self.key] = nil
+            if connections[client_key] then
+                fragment_buffer[client_key] = nil
+                connections[client_key] = nil
             end
         end
 
