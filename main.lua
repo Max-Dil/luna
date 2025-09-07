@@ -9,13 +9,12 @@ function love.load()
         port = 8081,
         name = "test server",
         max_ip_connected = 20,
-        -- no_errors = true,
+        no_errors = true,
         debug = true,
         request_listener = function (req)
             -- print("req: "..req)
         end
     })
-
     local main_router = app:new_router({
         prefix = "api",
     })
@@ -34,7 +33,7 @@ function love.load()
         validate = {text = {"string", "nil"}},
         responce_validate = {"string"},
         prefix = "echo",
-        async = true,
+        -- async = true,
         fun = function(args, client)
             return args.text or "no text provided"
         end,
@@ -57,11 +56,15 @@ function love.load()
     client:noawait_fetch("api/echo", function (data, err)
         print("noawait_fetch response: ", data, "err:" ..tostring(err))
     end,{text = "hello world2"})
-    local response = client:fetch("api/echo", {text = "hello world"})
-    print("Echo data: "..response)
+    -- local response = client:fetch("api/echo", {text = "hello world"})
+    -- print("Echo data: "..response)
 
-    -- local response = client:fetch("api/echo", {text = string.rep("hello world",300000)})
-    -- print("size: "..#response, " size wait: "..#string.rep("hello world",300000))
+    -- local response = client:fetch("api/echo", {text = string.rep("hello world",990000)})
+    -- print("size: "..#response, " size wait: "..#string.rep("hello world",990000))
+
+    -- client:noawait_fetch("api/echo", function (data, err)
+    --     print("size: "..#data, " size wait: "..#string.rep("hello world",100))
+    -- end,{text = string.rep("hello world",100)})
 end
 
 function love.update(dt)

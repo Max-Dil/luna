@@ -293,7 +293,8 @@ app.connect = function(config)
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
-    local app_data = setmetatable({
+    local app_data
+    app_data = setmetatable({
         name = config.name or "unknown name",
         host = config.host,
         port = config.port or 433,
@@ -315,6 +316,15 @@ app.connect = function(config)
         ping_timer = 0,
         dt = 1 / 60,
         socket = message_manager(),
+        set_max_message_size = function (new_max_messages_size)
+            app_data.socket.set_max_messages_size(new_max_messages_size)
+        end,
+        set_max_retries = function (new_max_retries)
+            app_data.socket.set_max_retries(new_max_retries)
+        end,
+        set_message_timeout = function (new_message_timeout)
+            app_data.socket.set_message_timeout(new_message_timeout)
+        end,
     }, { __index = class })
 
     if not try_connect(app_data) and not app_data.reconnect_time then

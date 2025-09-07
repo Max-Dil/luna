@@ -89,6 +89,16 @@ app.new_app = function(config)
         end,
 
         debug = config.debug,
+
+        set_max_message_size = function (new_max_messages_size)
+            app_data.socket.set_max_messages_size(new_max_messages_size)
+        end,
+        set_max_retries = function (new_max_retries)
+            app_data.socket.set_max_retries(new_max_retries)
+        end,
+        set_message_timeout = function (new_message_timeout)
+            app_data.socket.set_message_timeout(new_message_timeout)
+        end,
     }, { __index = router })
 
     local ok, err = pcall(function()

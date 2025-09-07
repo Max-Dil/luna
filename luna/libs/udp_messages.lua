@@ -23,12 +23,13 @@ SOFTWARE.
 ]]
 
 local function create()
+    local max_message_size = nil
     local connections = {}
     local message_status = {}
     local fragment_buffer = {}
 
     local message_timeout = 2
-    local max_retries = 3
+    local max_retries = 10
     local max_fragment_size = 1000
     local max_packets_per_tick = 63
 
@@ -64,10 +65,10 @@ local function create()
             local fragment_data = message:sub(start, start + max_fragment_size - 1)
             local packet = string.format("MSG:%s:%d:%d:%s", message_id, i, total_fragments, fragment_data)
 
-            local fragment_info = { 
-                packet = packet, 
+            local fragment_info = {
+                packet = packet,
                 acknowledged = false,
-                fragment_num = i 
+                fragment_num = i
             }
 
             status.fragments[i] = fragment_info
@@ -111,13 +112,21 @@ local function create()
 
                     local msg_buffer = fragment_buffer[client_key][message_id]
                     if not msg_buffer then
-                        msg_buffer = { fragments = {}, received_count = 0, total_fragments = total_frags }
+                        msg_buffer = { fragments = {}, received_count = 0, total_fragments = total_frags, total_size = 0 }
                         fragment_buffer[client_key][message_id] = msg_buffer
                     end
 
                     if not msg_buffer.fragments[frag_num] then
+                        local new_size = msg_buffer.total_size + #fragment
+                        if max_message_size and new_size > max_message_size then
+                            print("Message " .. message_id .. " from " .. client_key .. " exceeds max_message_size of " .. max_message_size .. " bytes. Discarding.")
+                            fragment_buffer[client_key][message_id] = nil
+                            return completed_messages
+                        end
+
                         msg_buffer.fragments[frag_num] = fragment
                         msg_buffer.received_count = msg_buffer.received_count + 1
+                        msg_buffer.total_size = new_size
 
                         if msg_buffer.received_count == msg_buffer.total_fragments then
                             local parts = {}
@@ -222,12 +231,27 @@ local function create()
         return connect
     end
 
+    local function set_max_messages_size(new_max_messages_size)
+        max_message_size = new_max_messages_size
+    end
+
+    local function set_max_retries(new_max_retries)
+        max_retries = new_max_retries
+    end
+
+    local function set_message_timeout(new_message_timeout)
+        message_timeout = new_message_timeout
+    end
+
     return {
         new_connect = new_connect,
         send_message = send_message,
         receive_message = receive_message,
         connections = connections,
-        update = update
+        update = update,
+        set_max_messages_size = set_max_messages_size,
+        set_max_retries = set_max_retries,
+        set_message_timeout = set_message_timeout,
     }
 end
 
