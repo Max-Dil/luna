@@ -49,6 +49,7 @@ end
 local function try_connect(app_data)
     local client, err = socket.udp()
     if client then
+        assert(client:setsockname(app_data.host, 0), "Failed to bind client socket")
         client:settimeout(0)
         app_data.client = client
         app_data.connected = true
