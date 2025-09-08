@@ -213,6 +213,15 @@ local class = {
                             end
                         end
                     end
+                elseif msg.message == "close" then
+                    if app_data.connected then
+                        app_data.client:close()
+                        app_data.connected = false
+                        app_data.trying_to_reconnect = true
+                        app_data.pending_requests = {}
+                        print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
+                    end
+                    break
                 else
                     if app_data.listener and not response.__luna then
                         app_data.listener(msg.message)
@@ -220,7 +229,7 @@ local class = {
                 end
             end
 
-            if final_response or final_error then
+            if final_response or final_error or app_data.client.is_close then
                 break
             end
 
@@ -374,6 +383,14 @@ app.update = function(dt)
                     end
                 elseif response.__luna and app_data.pending_requests and app_data.pending_requests[response.id] and app_data.pending_requests[response.id].timestamp == response.time then
                     app_data.pending_requests[response.id] = nil
+                elseif msg.message == "close" then
+                    if app_data.connected then
+                        app_data.client:close()
+                        app_data.connected = false
+                        app_data.trying_to_reconnect = true
+                        app_data.pending_requests = {}
+                        print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
+                    end
                 elseif app_data.listener then
                     app_data.listener(msg.message)
                 end

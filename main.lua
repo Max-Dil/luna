@@ -11,9 +11,10 @@ function love.load()
         max_ip_connected = 20,
         no_errors = true,
         debug = true,
-        request_listener = function (req)
-            -- print("req: "..req)
-        end
+        request_listener = function (req, client)
+            print("req: "..req)
+            -- print(client.send)
+        end,
     })
     local main_router = app:new_router({
         prefix = "api",

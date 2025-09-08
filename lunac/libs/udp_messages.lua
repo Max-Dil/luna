@@ -210,6 +210,7 @@ local function create()
             socket = socket,
             ip = myip,
             port = myport,
+            is_close = false,
         }
         connections[client_key] = connect
 
@@ -226,6 +227,7 @@ local function create()
                 fragment_buffer[client_key] = nil
                 connections[client_key] = nil
             end
+            connect.is_close = true
         end
 
         return connect

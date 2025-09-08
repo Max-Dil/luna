@@ -233,17 +233,43 @@ app.update = function(dt)
         for _, msg in ipairs(messages) do
             local data, ip, port = msg.message, msg.ip, msg.port
             local client_key = ip .. ":" .. port
+            local client = m.clients[client_key]
 
-            if not m.clients[client_key] then
+            if not client then
                 m.ip_counts[ip] = (m.ip_counts[ip] or 0) + 1
                 if m.ip_counts[ip] <= m.max_ip_connected then
-                    m.clients[client_key] = m.socket.new_connect(m.server, ip, port)
-                    m.clients[client_key].lastActive = os.time()
+                    client = m.socket.new_connect(m.server, ip, port)
+                    m.clients[client_key] = client
+                    client.lastActive = os.time()
+                    client.__close = client.close
+                    client.__app = m
+                    client.close = function (self)
+                        pcall(self.send, self, "close")
+                        self.__close()
+                        if self.is_close then
+                            if self.__app.debug then
+                                print("app: " .. self.__app.name, "Client disconnected ip: " .. self.ip ..
+                                ":" .. self.port)
+                            end
+                            self.__app.ip_counts[self.ip] = (self.__app.ip_counts[self.ip] or 1) - 1
+                            if self.__app.ip_counts[self.ip] <= 0 then
+                                self.__app.ip_counts[self.ip] = nil
+                            end
+                            if self.__app.close_client then
+                                local ok, cb_err = pcall(self.__app.close_client, self)
+                                if not ok then
+                                    handle_error(self.__app, "Error in close_client callback: " .. cb_err)
+                                end
+                            end
+                            self.__app.clients[self.ip .. ":" .. self.port] = nil
+                            self = nil
+                        end
+                    end
                     if m.debug then
                         print("app: " .. m.name, "New client connected ip: " .. ip .. ", port: " .. port)
                     end
                     if m.new_client then
-                        local ok, cb_err = pcall(m.new_client, { ip = ip, port = port })
+                        local ok, cb_err = pcall(m.new_client, client)
                         if not ok then
                             handle_error(m, "Error in new_client callback: " .. cb_err)
                         end
@@ -255,40 +281,45 @@ app.update = function(dt)
                     m.socket.send_message(json.encode({ error = "Max connections reached", __luna = true }), ip, port)
                 end
             else
-                m.clients[client_key].lastActive = os.time()
+                client.lastActive = os.time()
             end
 
-            if m.clients[client_key] then
+            if client then
                 if data ~= "ping" then
                     if m.debug then
                         print("app: " .. m.name, client_key, data)
                     end
+
                     if m.request_listener then
-                        m.request_listener(data)
+                        m.request_listener(data, client)
                     end
 
-                    local response
-                    for _, router_data in pairs(m.routers) do
-                        local res = router_data:process(m.clients[client_key], data)
-                        if res then
-                            response = res
-                            break
+                    if not client.is_close then
+                        local response
+                        for _, router_data in pairs(m.routers) do
+                            local res = router_data:process(client, data)
+                            if res then
+                                response = res
+                                break
+                            end
                         end
-                    end
 
-                    local response_to_send
-                    if type(response) == "table" and (response.request or response.error or response.response or response.id) then
-                        response_to_send = response
-                    else
-                        response_to_send = { no_responce = true }
-                    end
+                        if not client.is_close then
+                            local response_to_send
+                            if type(response) == "table" and (response.request or response.error or response.response or response.id) then
+                                response_to_send = response
+                            else
+                                response_to_send = { no_responce = true }
+                            end
 
-                    if not response_to_send.no_responce then
-                        local ok, send_err = pcall(function()
-                            m.clients[client_key]:send(json.encode(response_to_send), dt)
-                        end)
-                        if not ok then
-                            handle_error(m, "Error sending data to client " .. client_key .. ": " .. send_err)
+                            if not response_to_send.no_responce then
+                                local ok, send_err = pcall(function()
+                                    client:send(json.encode(response_to_send), dt)
+                                end)
+                                if not ok then
+                                    handle_error(m, "Error sending data to client " .. client_key .. ": " .. send_err)
+                                end
+                            end
                         end
                     end
                 end
@@ -300,20 +331,11 @@ app.update = function(dt)
             if currentTime - client.lastActive > TIMEOUT_SECONDS then
                 if m.debug then
                     print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                    ":" .. client.port .. " due to timeout")
+                    ":" .. client.port .. " <due to timeout>")
                 end
-                m.ip_counts[client.ip] = (m.ip_counts[client.ip] or 1) - 1
-                if m.ip_counts[client.ip] <= 0 then
-                    m.ip_counts[client.ip] = nil
-                end
+                print(currentTime, client.lastActive)
+                print(currentTime - client.lastActive, TIMEOUT_SECONDS)
                 m.clients[client_key]:close()
-                m.clients[client_key] = nil
-                if m.close_client then
-                    local ok, cb_err = pcall(m.close_client, { ip = client.ip, port = client.port })
-                    if not ok then
-                        handle_error(m, "Error in close_client callback: " .. cb_err)
-                    end
-                end
             end
         end
     end
