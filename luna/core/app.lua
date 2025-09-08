@@ -350,8 +350,6 @@ app.update = function(dt)
                     print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
                     ":" .. client.port .. " <due to timeout>")
                 end
-                print(currentTime, client.lastActive)
-                print(currentTime - client.lastActive, TIMEOUT_SECONDS)
                 m.clients[client_key]:close()
             end
         end

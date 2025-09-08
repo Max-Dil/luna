@@ -73,9 +73,13 @@ local function parse_request(data)
         return nil, "Invalid request format"
     end
 
+    local max_iterations = 300
+    local iteration = 0
+
     local args = {}
 
     while args_str and args_str ~= "" do
+        iteration = iteration + 1
         local key, value, remaining
         local matched = false
 
@@ -137,10 +141,23 @@ local function parse_request(data)
         end
 
         if not matched then
-            key, remaining = args_str:match("^(%S+)%s*(.*)$")
-            if not key then break end
-            args[key] = true
-            args_str = remaining
+            if args_str:match("%S") then
+                key, remaining = args_str:match("^(%S+)%s*(.*)$")
+                if key then
+                    args[key] = true
+                    args_str = remaining
+                    matched = true
+                else
+                    break
+                end
+            else
+                break
+            end
+        end
+
+        if iteration > max_iterations then
+            -- print("Request processing limit exceeded (300)")
+            break
         end
     end
 

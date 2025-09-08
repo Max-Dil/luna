@@ -60,8 +60,41 @@ function love.load()
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 
-    -- local response = client:fetch("api/echo", {text = string.rep("hello world",990000)}, 10)
-    -- print("size: "..#response, " size wait: "..#string.rep("hello world",990000))
+    -- local send = function(app_data, data)
+    --     if not app_data then
+    --         if app_data and app_data.no_errors then
+    --             app_data.error_handler("App not found")
+    --             return false
+    --         else
+    --             error("App not found", 2)
+    --         end
+    --     end
+
+    --     if not app_data.connected then
+    --         if app_data.no_errors then
+    --             app_data.error_handler("Not connected to server")
+    --             return false
+    --         else
+    --             error("Not connected to server", 2)
+    --         end
+    --     end
+
+    --     local success, err = pcall(app_data.socket.send_message, data, app_data.host, app_data.port)
+    --     if not success then
+    --         if app_data.no_errors then
+    --             app_data.error_handler("Send failed: " .. err)
+    --             return false
+    --         else
+    --             error("Send failed: " .. err, 2)
+    --         end
+    --     end
+
+    --     return true
+    -- end
+    -- send(client, "api/echo text='value1' key2='value2' __id='cb9c1a5b-6910-4fb2-b457-a9c72a392d90' __time='1757352493' __noawait=True " .. string.rep("a='attack' ", 1000))
+
+    -- local response = client:fetch("api/echo", {text = string.rep("hello world",999000)}, 100)
+    -- print("size: "..#response, " size wait: "..#string.rep("hello world",999000))
 
     -- client:noawait_fetch("api/echo", function (data, err)
     --     print("size: "..#data, " size wait: "..#string.rep("hello world",100))
