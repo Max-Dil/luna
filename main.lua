@@ -12,7 +12,7 @@ function love.load()
         no_errors = true,
         debug = true,
         request_listener = function (req, client)
-            print("req: "..req)
+            -- print("req: "..req)
             -- print(client.send)
         end,
     })
@@ -60,7 +60,7 @@ function love.load()
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 
-    -- local response = client:fetch("api/echo", {text = string.rep("hello world",990000)})
+    -- local response = client:fetch("api/echo", {text = string.rep("hello world",990000)}, 10)
     -- print("size: "..#response, " size wait: "..#string.rep("hello world",990000))
 
     -- client:noawait_fetch("api/echo", function (data, err)

@@ -188,6 +188,18 @@ local class = {
                 end
             end
 
+            app_data.ping_timer = app_data.ping_timer + app_data.dt
+            if app_data.ping_timer >= PING_INTERVAL then
+                local ping_request = "ping"
+                if ping_request then
+                    local success, err = pcall(app_data.socket.send_message, ping_request, app_data.host, app_data.port)
+                    if not success then
+                        app_data.error_handler("Ping send failed: "..err)
+                    end
+                end
+                app_data.ping_timer = 0
+            end
+
             app_data.socket.update(app_data.client, app_data.dt)
 
             local messages = app_data.socket.receive_message(app_data.client)
@@ -213,7 +225,7 @@ local class = {
                             end
                         end
                     end
-                elseif msg.message == "close" then
+                elseif msg.message == "__luna__close" then
                     if app_data.connected then
                         app_data.client:close()
                         app_data.connected = false
@@ -383,7 +395,7 @@ app.update = function(dt)
                     end
                 elseif response.__luna and app_data.pending_requests and app_data.pending_requests[response.id] and app_data.pending_requests[response.id].timestamp == response.time then
                     app_data.pending_requests[response.id] = nil
-                elseif msg.message == "close" then
+                elseif msg.message == "__luna__close" then
                     if app_data.connected then
                         app_data.client:close()
                         app_data.connected = false

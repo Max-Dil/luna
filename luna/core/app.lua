@@ -30,6 +30,7 @@ local message_manager = require("luna.libs.udp_messages")
 local app = {}
 local apps = {}
 local TIMEOUT_SECONDS = 10
+local PING_SECONDS = 1.9
 
 local function handle_error(app_data, message, err_level)
     if not app_data.no_errors then
@@ -131,6 +132,7 @@ app.remove = function(app_data)
     apps[name] = nil
 
     for client_key, client_data in pairs(app_data.clients) do
+        client_data:close()
         if app_data.close_client then
             local ok, err = pcall(app_data.close_client, client_data)
             if not ok then
@@ -241,27 +243,28 @@ app.update = function(dt)
                     client = m.socket.new_connect(m.server, ip, port)
                     m.clients[client_key] = client
                     client.lastActive = os.time()
+                    client.lastPing = os.time()
+                    client.pingCountPerLast = 0
                     client.__close = client.close
-                    client.__app = m
                     client.close = function (self)
-                        pcall(self.send, self, "close")
+                        pcall(self.send, self, "__luna__close")
                         self.__close()
                         if self.is_close then
-                            if self.__app.debug then
-                                print("app: " .. self.__app.name, "Client disconnected ip: " .. self.ip ..
+                            if m.debug then
+                                print("app: " .. m.name, "Client disconnected ip: " .. self.ip ..
                                 ":" .. self.port)
                             end
-                            self.__app.ip_counts[self.ip] = (self.__app.ip_counts[self.ip] or 1) - 1
-                            if self.__app.ip_counts[self.ip] <= 0 then
-                                self.__app.ip_counts[self.ip] = nil
+                            m.ip_counts[self.ip] = (m.ip_counts[self.ip] or 1) - 1
+                            if m.ip_counts[self.ip] <= 0 then
+                                m.ip_counts[self.ip] = nil
                             end
-                            if self.__app.close_client then
-                                local ok, cb_err = pcall(self.__app.close_client, self)
+                            if m.close_client then
+                                local ok, cb_err = pcall(m.close_client, self)
                                 if not ok then
-                                    handle_error(self.__app, "Error in close_client callback: " .. cb_err)
+                                    handle_error(m, "Error in close_client callback: " .. cb_err)
                                 end
                             end
-                            self.__app.clients[self.ip .. ":" .. self.port] = nil
+                            m.clients[self.ip .. ":" .. self.port] = nil
                             self = nil
                         end
                     end
@@ -321,6 +324,20 @@ app.update = function(dt)
                                 end
                             end
                         end
+                    end
+                else
+                    if os.time() - client.lastPing < PING_SECONDS then
+                        if client.pingCountPerLast > 2 then
+                            if m.debug then
+                                print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                        ":" .. client.port .. " <ping interval checed>")
+                            end
+                            client:close()
+                        end
+                        client.pingCountPerLast = 0
+                    else
+                        client.lastPing = os.time()
+                        client.pingCountPerLast = client.pingCountPerLast + 1
                     end
                 end
             end

@@ -24,7 +24,6 @@ SOFTWARE.
 
 local req = {}
 local json = require("luna.libs.json")
-local message_manager = require("luna.libs.udp_messages")
 
 req.new = function(router, config)
     local req_data
