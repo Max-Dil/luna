@@ -339,11 +339,13 @@ SOFTWARE.]]
         local number_to_bytestring = function(num, n)
             n = n or math.floor(math.log(num) / math.log(0x100) + 1);
             n = n > 0 and n or 1;
-            local s = "";
+            local string_char = string.char;
+            local t = {};
             for i = 1, n do
-                s = string.char((num % 0x100 ^ i - num % 0x100 ^ (i - 1)) / 0x100 ^ (i - 1)) .. s;
+                t[n - i + 1] = string_char((num % 0x100 ^ i - num % 0x100 ^ (i - 1)) / 0x100 ^ (i - 1));
             end
-            s = ("\0"):rep(n - s:len()) .. s;
+            local s = table.concat(t);
+            s = ("\0"):rep(n - #s) .. s;
             return s, n;
         end
 
@@ -397,33 +399,33 @@ SOFTWARE.]]
         local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
 
         local function unpack(s, len)
-            local array = {}
-            local count = 0
-            local char = string.char
-            len = len or s:len()
+            local array = {};
+            local count = 0;
+            local char = string.char;
+            len = len or s:len();
 
             for i = 1, len, 4 do
-                local chunk = s:sub(i, i + 3)
+                local chunk = s:sub(i, i + 3);
                 if #chunk < 4 then
-                    chunk = chunk .. char(0):rep(4 - #chunk)
+                    chunk = chunk .. char(0):rep(4 - #chunk);
                 end
-                count = count + 1
-                array[count] = num_from_bytes(chunk)
+                count = count + 1;
+                array[count] = num_from_bytes(chunk);
             end
-            return array
+            return array;
         end
 
         local function pack(a, len)
-            local t = {}
-            local array_len = #a
-            local remaining = len or (array_len * 4)
-            local min = math.min
+            local t = {};
+            local array_len = #a;
+            local remaining = len or (array_len * 4);
+            local min = math.min;
             for i = 1, array_len do
-                local bytes = num_to_bytes(a[i], 4)
-                local take = min(4, remaining - (i - 1) * 4)
-                t[i] = bytes:sub(1, take)
+                local bytes = num_to_bytes(a[i], 4);
+                local take = min(4, remaining - (i - 1) * 4);
+                t[i] = bytes:sub(1, take);
             end
-            return table.concat(t)
+            return table.concat(t);
         end
 
         local quarter_round = function(s, a, b, c, d)
@@ -471,22 +473,28 @@ SOFTWARE.]]
 
             local plain_len = plain:len()
 
-            while counter < floor(plain_len / 64) do
+            local chunks = floor(plain_len / 64)
+            while counter < chunks do
                 local key_stream = block(key, nonce, counter);
                 local plain_block = unpack(plain:sub(counter * 64 + 1, (counter + 1) * 64));
+
                 local cipher_block = {};
                 for j = 1, 16 do
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
+
                 cipher_count = cipher_count + 1
                 cipher[cipher_count] = pack(cipher_block);
+
                 counter = counter + 1;
             end
             if plain_len % 64 ~= 0 then
                 local key_stream = block(key, nonce, counter);
                 local plain_block = unpack(plain:sub(counter * 64 + 1));
                 local cipher_block = {};
-                for j = 1, ceil((plain_len % 64) / 4) do
+
+                chunks = ceil((plain_len % 64) / 4)
+                for j = 1, chunks do
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
 
