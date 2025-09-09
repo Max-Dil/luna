@@ -1,3 +1,57 @@
+-------- Base server example ------------
+--[[
+local luna, lunac
+function love.load()
+    luna = require("luna")
+
+    local app = luna.new_app({
+        host = "127.0.0.1",
+        port = 8081,
+        name = "test server",
+    })
+
+    local default_router = app:new_router({prefix = "default"})
+    default_router:new({prefix = "ping", fun = function(args, client) end})
+
+    local main_router = app:new_router({
+        prefix = "api",
+    })
+
+    main_router:new({
+        prefix = "echo",
+        fun = function(args, client)
+            return args.text or "no text provided"
+        end,
+    })
+
+    lunac = require("lunac")
+    _G.client = lunac.connect_to_app({
+        host = "127.0.0.1",
+        port = 8081,
+        name = "test server",
+
+        server = luna,
+        reconnect_time = 5
+    })
+
+    local response = client:fetch("api/echo", {text = "hello world"})
+    print("Echo data: "..response)
+end
+
+local t = 0
+function love.update(dt)
+    lunac.update(dt)
+    luna.update()
+
+    t = t + dt
+    if t > 2 then
+        client:noawait_fetch("default/ping",function()end,{})
+        t = 0
+    end
+end
+]]
+-----------------------------------------
+
 _G.love = love
 
 local luna, lunac
@@ -84,21 +138,18 @@ function love.load()
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 
-    -- client:noawait_fetch("api/close", function (data, err)
-    --     print("noawait_fetch response: ", data, "err:" ..tostring(err))
-    -- end,{text = "hello world2"})
-
-
-
-
+    -- client:noawait_fetch("api/close", function()end,{})
 
     -- local send = function(app_data, data)
     --     pcall(app_data.socket.send_message, data, app_data.host, app_data.port)
     -- end
     -- send(client, "api/echo text='value1' key2='value2' __id='cb9c1a5b-6910-4fb2-b457-a9c72a392d90' __time='1757352493' __noawait=True " .. string.rep("a='attack' ", 1000))
 
-    -- local response = client:fetch("api/echo", {text = string.rep("hello world",999000)}, 100)
-    -- print("size: "..#response, " size wait: "..#string.rep("hello world",999000))
+    -- client:noawait_fetch("api/echo", function (data, err)
+    --     print("noawait_fetch response: ", #data, " sizewait:" ..#string.rep("hello world",89900))
+    -- end,{text = string.rep("hello world",89900)})
+    -- local response = client:fetch("api/echo", {text = string.rep("hello world",99900)}, 100)
+    -- print("size: "..#response, " size wait: "..#string.rep("hello world",99900))
 
     -- client:noawait_fetch("api/echo", function (data, err)
     --     print("size: "..#data, " size wait: "..#string.rep("hello world",100))
@@ -112,7 +163,7 @@ function love.update(dt)
 
     t = t + dt
     if t > 2 then
-        client:noawait_fetch("default/ping", function (data, err)end,{})
+        client:noawait_fetch("default/ping",function()end,{})
         t = 0
     end
 end

@@ -396,22 +396,34 @@ SOFTWARE.]]
         local XOR, LROT = Bitops.u32_xor, Bitops.u32_lrot;
         local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
 
-        local unpack = function(s)
-            local array = {};
-            for i = 1, s:len(), 4 do
-                local chunk = s:sub(i, i + 3);
-                chunk = chunk .. string.char(0):rep(4 - #chunk);
-                table.insert(array, num_from_bytes(chunk));
+        local function unpack(s, len)
+            local array = {}
+            local count = 0
+            local char = string.char
+            len = len or s:len()
+
+            for i = 1, len, 4 do
+                local chunk = s:sub(i, i + 3)
+                if #chunk < 4 then
+                    chunk = chunk .. char(0):rep(4 - #chunk)
+                end
+                count = count + 1
+                array[count] = num_from_bytes(chunk)
             end
-            return array;
+            return array
         end
 
-        local pack = function(a)
-            local array = {};
-            for i = 1, #a do
-                array[i] = num_to_bytes(a[i], 4);
+        local function pack(a, len)
+            local t = {}
+            local array_len = #a
+            local remaining = len or (array_len * 4)
+            local min = math.min
+            for i = 1, array_len do
+                local bytes = num_to_bytes(a[i], 4)
+                local take = min(4, remaining - (i - 1) * 4)
+                t[i] = bytes:sub(1, take)
             end
-            return table.concat(array);
+            return table.concat(t)
         end
 
         local quarter_round = function(s, a, b, c, d)
@@ -449,36 +461,44 @@ SOFTWARE.]]
         end
 
         local encrypt = function(plain, key, nonce)
+            local unpack, pack, floor, ceil = unpack, pack, math.floor, math.ceil;
+
             key = unpack(key);
             nonce = unpack(nonce);
             local counter = 0;
-            local cipher = "";
-            while counter < math.floor(plain:len() / 64) do
+            local cipher = {};
+            local cipher_count = 0;
+
+            local plain_len = plain:len()
+
+            while counter < floor(plain_len / 64) do
                 local key_stream = block(key, nonce, counter);
                 local plain_block = unpack(plain:sub(counter * 64 + 1, (counter + 1) * 64));
                 local cipher_block = {};
                 for j = 1, 16 do
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
-                cipher = cipher .. pack(cipher_block);
+                cipher_count = cipher_count + 1
+                cipher[cipher_count] = pack(cipher_block);
                 counter = counter + 1;
             end
-            if plain:len() % 64 ~= 0 then
+            if plain_len % 64 ~= 0 then
                 local key_stream = block(key, nonce, counter);
                 local plain_block = unpack(plain:sub(counter * 64 + 1));
                 local cipher_block = {};
-                for j = 1, math.ceil((plain:len() % 64) / 4) do
+                for j = 1, ceil((plain_len % 64) / 4) do
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
-                cipher = cipher .. pack(cipher_block);
+
+                cipher_count = cipher_count + 1
+                cipher[cipher_count] = pack(cipher_block);
             end
-            return cipher;
+            return table.concat(cipher);
         end
 
         local decrypt = function(cipher, key, nonce)
             return encrypt(cipher, key, nonce);
         end
-
 
         security.chacha20 = {
             encrypt = encrypt,
