@@ -307,6 +307,10 @@ req.process = function(router, client_data, data)
         end
     end
 
+    if request.args.__client_token ~= client_data.token then
+        return {request = request.path, error = "Couldn't confirm the client's token", time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
+    end
+
     local result
     if request_handler.async then
         local coro = coroutine.create(request_handler.fun)

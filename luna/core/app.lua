@@ -26,11 +26,12 @@ local socket = require("socket")
 local router = require("luna.core.router")
 local json = require("luna.libs.json")
 local message_manager = require("luna.libs.udp_messages")
+local security = require("luna.libs.security")
 
 local app = {}
 local apps = {}
 local TIMEOUT_SECONDS = 10
-local PING_SECONDS = 1.9
+local PING_SECONDS = 1
 
 local function handle_error(app_data, message, err_level)
     if not app_data.no_errors then
@@ -39,6 +40,32 @@ local function handle_error(app_data, message, err_level)
         else
             error(message, err_level or 2)
         end
+    end
+end
+
+local encrypt_message = function(client, message)
+    if client.shared_secret and client.nonce and client.token then
+        local success, err = pcall(security.chacha20.encrypt, message, security.utils.key_to_string(client.shared_secret),
+            security.base64.decode(client.nonce))
+        if success then
+            err = err:match("^(.-)%z*$") or err
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
+    end
+end
+
+local decrypt_message = function(client, message)
+    if client.shared_secret and client.nonce and client.token then
+        local success, err = pcall(security.chacha20.decrypt, message, security.utils.key_to_string(client.shared_secret),
+            security.base64.decode(client.nonce))
+        if success then
+            err = err:match("^(.-)%z*$") or err
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
     end
 end
 
@@ -60,6 +87,9 @@ app.new_app = function(config)
     if config.debug == nil then
         config.debug = true
     end
+
+    local server_private, server_public = security.x25519.generate_keypair()
+
     app_data = setmetatable({
         max_ip_connected = config.max_ip_connected or 100,
         name = config.name or "unknown name",
@@ -91,15 +121,18 @@ app.new_app = function(config)
 
         debug = config.debug,
 
-        set_max_message_size = function (new_max_messages_size)
+        set_max_message_size = function(new_max_messages_size)
             app_data.socket.set_max_messages_size(new_max_messages_size)
         end,
-        set_max_retries = function (new_max_retries)
+        set_max_retries = function(new_max_retries)
             app_data.socket.set_max_retries(new_max_retries)
         end,
-        set_message_timeout = function (new_message_timeout)
+        set_message_timeout = function(new_message_timeout)
             app_data.socket.set_message_timeout(new_message_timeout)
         end,
+
+        server_private = server_private,
+        server_public = server_public,
     }, { __index = router })
 
     local ok, err = pcall(function()
@@ -216,13 +249,15 @@ app.update = function(dt)
                 end
 
                 if request_result and request_result.response then
-                    local response = request_result.response
-                    local ok, send_err = pcall(function()
-                        client:send(json.encode(response))
-                    end)
-                    if not ok then
-                        print("Error in async request: " .. send_err .. "  id:" ..
-                        response.id .. "  path:" .. response.request)
+                    if not client.is_close then
+                        local response = request_result.response
+                        local ok, send_err = pcall(function()
+                            client:send(json.encode(response))
+                        end)
+                        if not ok then
+                            print("Error in async request: " .. send_err .. "  id:" ..
+                                response.id .. "  path:" .. response.request)
+                        end
                     end
                     m.running_funs[coro] = nil
                 end
@@ -245,14 +280,45 @@ app.update = function(dt)
                     client.lastActive = os.time()
                     client.lastPing = os.time()
                     client.pingCountPerLast = 0
+
+                    client.auth_token = security.utils.uuid()
+                    client.nonce = security.base64.encode(security.utils.generate_nonce())
+
+                    client.__send = client.send
+                    client.send = function (self, data)
+                        local success, message = encrypt_message(client, data)
+                        if success then
+                            pcall(self.__send, self, message)
+                        end
+                    end
+
+                    local ok, send_err = pcall(function()
+                        client:__send(json.encode({
+                            __luna = true,
+                            request = "handshake",
+                            response = json.encode({
+                                pub = security.utils.key_to_string(m.server_public),
+                                token = client.auth_token,
+                                nonce = client.nonce
+                            }),
+                            id = "handshake",
+                            time = 0,
+                            __noawait = true,
+                        }))
+                    end)
+
+                    if not ok then
+                        handle_error(m, "Error sending handshake: " .. send_err)
+                    end
+
                     client.__close = client.close
-                    client.close = function (self)
+                    client.close = function(self)
                         pcall(self.send, self, "__luna__close")
                         self.__close()
                         if self.is_close then
                             if m.debug then
                                 print("app: " .. m.name, "Client disconnected ip: " .. self.ip ..
-                                ":" .. self.port)
+                                    ":" .. self.port)
                             end
                             m.ip_counts[self.ip] = (m.ip_counts[self.ip] or 1) - 1
                             if m.ip_counts[self.ip] <= 0 then
@@ -279,58 +345,76 @@ app.update = function(dt)
                     end
                 else
                     print("Rejected connection from " ..
-                    ip .. ":" .. port .. ": max connections (" .. m.max_ip_connected .. ") reached")
+                        ip .. ":" .. port .. ": max connections (" .. m.max_ip_connected .. ") reached")
                     m.ip_counts[ip] = m.ip_counts[ip] - 1
-                    m.socket.send_message(json.encode({ error = "Max connections reached", __luna = true }), ip, port)
+                    local success, message = encrypt_message(client, json.encode({ error = "Max connections reached", __luna = true }))
+                    if success then
+                        m.socket.send_message(message, ip, port)
+                    end
                 end
-            else
-                client.lastActive = os.time()
             end
 
             if client then
-                if data ~= "ping" then
-                    if m.debug then
-                        print("app: " .. m.name, client_key, data)
-                    end
+                client.lastActive = os.time()
+                if client.auth_token then
+                    local name = string.sub(data, 1, 10)
+                    local params = string.sub(data, 11, string.len(data))
 
-                    if m.request_listener then
-                        m.request_listener(data, client)
-                    end
+                    if name and params then
+                        if name == "client_pub" then
+                            local args = security.utils.split(params, "|")
+                            local client_pub, auth_token = args[1], args[2]
 
-                    if not client.is_close then
-                        local response
-                        for _, router_data in pairs(m.routers) do
-                            local res = router_data:process(client, data)
-                            if res then
-                                response = res
-                                break
-                            end
-                        end
-
-                        if not client.is_close then
-                            local response_to_send
-                            if type(response) == "table" and (response.request or response.error or response.response or response.id) then
-                                response_to_send = response
-                            else
-                                response_to_send = { no_responce = true }
-                            end
-
-                            if not response_to_send.no_responce then
+                            if auth_token == client.auth_token then
+                                client_pub = security.utils.string_to_key(client_pub)
+                                client.shared_secret = security.x25519.get_shared_key(m.server_private, client_pub)
                                 local ok, send_err = pcall(function()
-                                    client:send(json.encode(response_to_send), dt)
+                                    client:__send(json.encode({
+                                        __luna = true,
+                                        request = "connect",
+                                        response = true,
+                                        id = "connect",
+                                        time = 0,
+                                        __noawait = true,
+                                    }))
                                 end)
                                 if not ok then
-                                    handle_error(m, "Error sending data to client " .. client_key .. ": " .. send_err)
+                                    handle_error(m, "Error sending connect: " .. send_err)
+                                end
+                            end
+                        elseif name == "client_tok" then
+                            if client.shared_secret and client.nonce then
+                                local decrypted = security.chacha20.decrypt(params,
+                                    security.utils.key_to_string(client.shared_secret),
+                                    security.base64.decode(client.nonce))
+
+                                if decrypted then
+                                    client.auth_token = nil
+                                    client.token = decrypted
+
+                                    local ok, send_err = pcall(function()
+                                        client:__send(json.encode({
+                                            __luna = true,
+                                            request = "connect",
+                                            response = true,
+                                            id = "connect",
+                                            time = 0,
+                                            __noawait = true,
+                                        }))
+                                    end)
+                                    if not ok then
+                                        handle_error(m, "Error sending token connect: " .. send_err)
+                                    end
                                 end
                             end
                         end
                     end
-                else
+                elseif data == "ping" then
                     if os.time() - client.lastPing < PING_SECONDS then
                         if client.pingCountPerLast > 2 then
                             if m.debug then
                                 print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                        ":" .. client.port .. " <ping interval checed>")
+                                    ":" .. client.port .. " <ping interval checed>")
                             end
                             client:close()
                         end
@@ -338,6 +422,49 @@ app.update = function(dt)
                     else
                         client.lastPing = os.time()
                         client.pingCountPerLast = client.pingCountPerLast + 1
+                    end
+                else
+                    local success, err = decrypt_message(client, data)
+                    if success and err then
+                        data = err
+                        if m.debug then
+                            print("app: " .. m.name, client_key, data)
+                        end
+
+                        if m.request_listener then
+                            m.request_listener(data, client)
+                        end
+
+                        if not client.is_close then
+                            local response
+                            for _, router_data in pairs(m.routers) do
+                                local res = router_data:process(client, data)
+                                if res then
+                                    response = res
+                                    break
+                                end
+                            end
+
+                            if not client.is_close then
+                                local response_to_send
+                                if type(response) == "table" and (response.request or response.error or response.response or response.id) then
+                                    response_to_send = response
+                                else
+                                    response_to_send = { no_responce = true }
+                                end
+
+                                if not response_to_send.no_responce then
+                                    local ok, send_err = pcall(function()
+                                        client:send(json.encode(response_to_send))
+                                    end)
+                                    if not ok then
+                                        handle_error(m, "Error sending data to client " .. client_key .. ": " .. send_err)
+                                    end
+                                end
+                            end
+                        else
+                            handle_error(m, "Error sending data to client " .. client_key .. ": " .. (err or "unknown decrypt error"))
+                        end
                     end
                 end
             end
@@ -348,7 +475,7 @@ app.update = function(dt)
             if currentTime - client.lastActive > TIMEOUT_SECONDS then
                 if m.debug then
                     print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                    ":" .. client.port .. " <due to timeout>")
+                        ":" .. client.port .. " <due to timeout>")
                 end
                 m.clients[client_key]:close()
             end

@@ -25,10 +25,37 @@ SOFTWARE.
 local socket = require("socket")
 local json = require("lunac.libs.json")
 local message_manager = require("lunac.libs.udp_messages")
+local security = require("lunac.libs.security")
 
 local app = {}
 local apps = {}
 local PING_INTERVAL = 2
+
+local encrypt_message = function(app_data, message)
+    if app_data.shared_secret and app_data.nonce then
+        local success, err = pcall(security.chacha20.encrypt, message,
+            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+        if success then
+            err = err:match("^(.-)%z*$") or err
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
+    end
+end
+
+local decrypt_message = function(app_data, message)
+    if app_data.shared_secret and app_data.nonce then
+        local success, err = pcall(security.chacha20.decrypt, message,
+            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+        if success then
+            err = err:match("^(.-)%z*$") or err
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
+    end
+end
 
 local function parse_response(line)
     local ok, result = pcall(json.decode, line)
@@ -49,11 +76,153 @@ end
 local function try_connect(app_data)
     local client, err = socket.udp()
     if client then
+        app_data.pending_noawait_requests = {}
+        app_data.pending_requests = {}
         assert(client:setsockname(app_data.host, 0), "Failed to bind client socket")
         client:settimeout(0)
         app_data.client = client
         app_data.connected = true
         app_data.trying_to_reconnect = false
+
+        ---------------- Подключение ---------------
+        app_data.nonce = nil
+        app_data.shared_secret = nil
+
+        app_data.no_server_decrypt = true
+        local TIMEOUT = 5
+        local start_time
+
+        local success, err = pcall(app_data.socket.send_message, "ping", app_data.host, app_data.port)
+        if not success then
+            app_data.error_handler("Init send failed: " .. err)
+            app_data.connected = false
+            app_data.trying_to_reconnect = true
+            app_data.client = nil
+            return false
+        end
+        app_data.ping_timer = 0
+
+        local server_pub, token, nonce
+        local error_message
+        app_data.pending_noawait_requests["handshake"] = {
+            path = "handshake",
+            timestamp = 0,
+            callback = function(data, err)
+                if data then
+                    local success, decoded = pcall(json.decode, data)
+                    if success then
+                        if decoded.pub and decoded.token and decoded.nonce then
+                            server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
+                                decoded.nonce
+                        else
+                            error_message = "Error not found connect args"
+                        end
+                    else
+                        error_message = decoded
+                    end
+                else
+                    error_message = err
+                end
+            end
+        }
+
+        start_time = socket.gettime()
+        while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            if app_data.server then app_data.server.update(1 / 60) end
+            app.update(1 / 60)
+            socket.sleep(0.001)
+        end
+
+        if error_message then
+            app_data.error_handler("handshake: " .. error_message)
+            app_data.connected = false
+            app_data.trying_to_reconnect = true
+            app_data.client = nil
+            return false
+        end
+
+        app_data.nonce = nonce
+        app_data.shared_secret = security.x25519.get_shared_key(app_data.client_private, server_pub)
+
+        success, err = pcall(app_data.socket.send_message,
+            "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
+            app_data.host, app_data.port)
+        if not success then
+            app_data.error_handler("Client pub send failed: " .. err)
+            return false
+        end
+
+        local connect, error_message
+        app_data.pending_noawait_requests["connect"] = {
+            path = "connect",
+            timestamp = 0,
+            callback = function(data, err)
+                if data then
+                    connect = true
+                else
+                    error_message = err
+                end
+            end
+        }
+
+        start_time = socket.gettime()
+        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            if app_data.server then app_data.server.update(1 / 60) end
+            app.update(1 / 60)
+            socket.sleep(0.001)
+        end
+
+        if error_message then
+            app_data.error_handler("connect: " .. error_message)
+            app_data.connected = false
+            app_data.trying_to_reconnect = true
+            app_data.client = nil
+            return false
+        end
+
+        local client_token = security.chacha20.encrypt(app_data.client_token,
+            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+        success, err = pcall(app_data.socket.send_message,
+            "client_tok" .. client_token,
+            app_data.host, app_data.port)
+        if not success then
+            app_data.error_handler("Client token send failed: " .. err)
+            return false
+        end
+
+        connect, error_message = nil, nil
+        app_data.pending_noawait_requests["connect"] = {
+            path = "connect",
+            timestamp = 0,
+            callback = function(data, err)
+                if data then
+                    connect = true
+                else
+                    error_message = err
+                end
+            end
+        }
+
+        start_time = socket.gettime()
+        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            if app_data.server then app_data.server.update(1 / 60) end
+            app.update(1 / 60)
+            socket.sleep(0.001)
+        end
+
+        if error_message then
+            app_data.error_handler("connect client token: " .. error_message)
+            app_data.connected = false
+            app_data.trying_to_reconnect = true
+            app_data.client = nil
+            return false
+        end
+
+        print("Succefully new security CONNECTION")
+        app_data.ping_timer = 0
+        app_data.no_server_decrypt = nil
+        --------------------------------------------
+
         print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
             local ok, cb_err = pcall(app_data.connect_server)
@@ -107,6 +276,7 @@ local function serelizate_request(args, app_data, request_id, timestamp, request
     end
     table.insert(arg_parts, "__id='" .. request_id .. "'")
     table.insert(arg_parts, "__time='" .. timestamp .. "'")
+    table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
     if noawait then
         table.insert(arg_parts, "__noawait=True")
     end
@@ -147,7 +317,19 @@ local class = {
             start_time = socket.gettime()
         }
 
-        local success, err = pcall(app_data.socket.send_message, request, app_data.host, app_data.port)
+        local success, err = encrypt_message(app_data, request)
+        if not success then
+            app_data.pending_requests[request_id] = nil
+            if app_data.no_errors then
+                app_data.error_handler("Encrypt failed: " .. err)
+                return nil, err or "Failed to encrypt request"
+            else
+                error("Encrypt failed: " .. err, 2)
+            end
+        end
+        local message = err
+
+        success, err = pcall(app_data.socket.send_message, message, app_data.host, app_data.port)
         if not success then
             app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
@@ -172,7 +354,7 @@ local class = {
             if not app_data.connected then
                 if app_data.reconnect_time then
                     if try_connect(app_data) then
-                        success, err = pcall(app_data.socket.send_message, app_data.client, request, app_data.host,
+                        success, err = pcall(app_data.socket.send_message, app_data.client, message, app_data.host,
                             app_data.port, app_data.dt)
                         if not success then
                             app_data.pending_requests[request_id] = nil
@@ -194,7 +376,7 @@ local class = {
                 if ping_request then
                     local success, err = pcall(app_data.socket.send_message, ping_request, app_data.host, app_data.port)
                     if not success then
-                        app_data.error_handler("Ping send failed: "..err)
+                        app_data.error_handler("Ping send failed: " .. err)
                     end
                 end
                 app_data.ping_timer = 0
@@ -204,39 +386,49 @@ local class = {
 
             local messages = app_data.socket.receive_message(app_data.client)
             for _, msg in ipairs(messages) do
-                local response = parse_response(msg.message)
+                if app_data.no_server_decrypt then
+                    success, err = true, msg.message
+                else
+                    success, err = decrypt_message(app_data, msg.message)
+                end
+                if success then
+                    local request_message = err
 
-                if response.__luna and response.request == path and response.id == request_id and response.time == timestamp then
-                    app_data.pending_requests[request_id] = nil
-                    if response.error then
-                        final_error = response.error
-                    else
-                        final_response = response.response
-                    end
-                elseif response.__luna and response.__noawait then
-                    if app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
-                        local callback = app_data.pending_noawait_requests[response.id].callback
-                        app_data.pending_noawait_requests[response.id] = nil
-                        if callback then
-                            if response.error then
-                                callback(nil, response.error)
-                            else
-                                callback(response.response, nil)
+                    local response = parse_response(request_message)
+
+                    if response.__luna and response.request == path and response.id == request_id and response.time == timestamp then
+                        app_data.pending_requests[request_id] = nil
+                        if response.error then
+                            final_error = response.error
+                        else
+                            final_response = response.response
+                        end
+                    elseif response.__luna and response.__noawait then
+                        if app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+                            local callback = app_data.pending_noawait_requests[response.id].callback
+                            app_data.pending_noawait_requests[response.id] = nil
+                            if callback then
+                                if response.error then
+                                    callback(nil, response.error)
+                                else
+                                    callback(response.response, nil)
+                                end
                             end
                         end
-                    end
-                elseif msg.message == "__luna__close" then
-                    if app_data.connected then
-                        app_data.client:close()
-                        app_data.connected = false
-                        app_data.trying_to_reconnect = true
-                        app_data.pending_requests = {}
-                        print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
-                    end
-                    break
-                else
-                    if app_data.listener and not response.__luna then
-                        app_data.listener(msg.message)
+                    elseif request_message == "__luna__close" then
+                        if app_data.connected then
+                            app_data.client:close()
+                            app_data.connected = false
+                            app_data.trying_to_reconnect = true
+                            app_data.pending_requests = {}
+                            app_data.shared_secret = nil
+                            print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
+                        end
+                        break
+                    else
+                        if app_data.listener and not response.__luna then
+                            app_data.listener(request_message)
+                        end
                     end
                 end
             end
@@ -295,7 +487,19 @@ local class = {
             callback = callback
         }
 
-        local success, err = pcall(app_data.socket.send_message, request, app_data.host, app_data.port)
+        local success, err = encrypt_message(app_data, request)
+        if not success then
+            app_data.pending_requests[request_id] = nil
+            if app_data.no_errors then
+                app_data.error_handler("Encrypt failed: " .. err)
+                return nil, err or "Failed to encrypt request"
+            else
+                error("Encrypt failed: " .. err, 2)
+            end
+        end
+        local message = err
+
+        success, err = pcall(app_data.socket.send_message, message, app_data.host, app_data.port)
         if not success then
             app_data.pending_noawait_requests[request_id] = nil
             if app_data.no_errors then
@@ -314,6 +518,9 @@ app.connect = function(config)
     if not config.host then
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
+
+    local client_token = uuid()
+    local client_private, client_public = security.x25519.generate_keypair()
 
     local app_data
     app_data = setmetatable({
@@ -338,16 +545,22 @@ app.connect = function(config)
         ping_timer = 0,
         dt = 1 / 60,
         socket = message_manager(),
-        set_max_message_size = function (new_max_messages_size)
+        set_max_message_size = function(new_max_messages_size)
             app_data.socket.set_max_messages_size(new_max_messages_size)
         end,
-        set_max_retries = function (new_max_retries)
+        set_max_retries = function(new_max_retries)
             app_data.socket.set_max_retries(new_max_retries)
         end,
-        set_message_timeout = function (new_message_timeout)
+        set_message_timeout = function(new_message_timeout)
             app_data.socket.set_message_timeout(new_message_timeout)
         end,
+
+        client_token = client_token,
+        client_private = client_private,
+        client_public = client_public,
     }, { __index = class })
+
+    apps[app_data.name] = app_data
 
     if not try_connect(app_data) and not app_data.reconnect_time then
         if not app_data.no_errors then
@@ -356,23 +569,19 @@ app.connect = function(config)
         return nil
     end
 
-    apps[app_data.name] = app_data
     return app_data
 end
 
 app.update = function(dt)
-    dt = dt or (1/60)
+    dt = dt or (1 / 60)
     for name, app_data in pairs(apps) do
         app_data.dt = dt
         if app_data.connected then
             app_data.ping_timer = app_data.ping_timer + dt
             if app_data.ping_timer >= PING_INTERVAL then
-                local ping_request = "ping"
-                if ping_request then
-                    local success, err = pcall(app_data.socket.send_message, ping_request, app_data.host, app_data.port)
-                    if not success then
-                        app_data.error_handler("Ping send failed: "..err)
-                    end
+                local success, err = pcall(app_data.socket.send_message, "ping", app_data.host, app_data.port)
+                if not success then
+                    app_data.error_handler("Ping send failed: " .. err)
                 end
                 app_data.ping_timer = 0
             end
@@ -381,30 +590,39 @@ app.update = function(dt)
 
             local messages = app_data.socket.receive_message(app_data.client)
             for _, msg in ipairs(messages) do
-                local response = parse_response(msg.message)
+                local success, err = true, msg.message
+                if not app_data.no_server_decrypt then
+                    success, err = decrypt_message(app_data, msg.message)
+                end
 
-                if response.__luna and response.__noawait and app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
-                    local callback = app_data.pending_noawait_requests[response.id].callback
-                    app_data.pending_noawait_requests[response.id] = nil
-                    if callback then
-                        if response.error then
-                            callback(nil, response.error)
-                        else
-                            callback(response.response, nil)
+                if success then
+                    local request_message = err
+                    local response = parse_response(request_message)
+
+                    if response.__luna and response.__noawait and app_data.pending_noawait_requests and app_data.pending_noawait_requests[response.id] and app_data.pending_noawait_requests[response.id].timestamp == response.time then
+                        local callback = app_data.pending_noawait_requests[response.id].callback
+                        app_data.pending_noawait_requests[response.id] = nil
+                        if callback then
+                            if response.error then
+                                callback(nil, response.error)
+                            else
+                                callback(response.response, nil)
+                            end
                         end
+                    elseif response.__luna and app_data.pending_requests and app_data.pending_requests[response.id] and app_data.pending_requests[response.id].timestamp == response.time then
+                        app_data.pending_requests[response.id] = nil
+                    elseif request_message == "__luna__close" then
+                        if app_data.connected then
+                            app_data.client:close()
+                            app_data.connected = false
+                            app_data.trying_to_reconnect = true
+                            app_data.pending_requests = {}
+                            app_data.shared_secret = nil
+                            print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
+                        end
+                    elseif app_data.listener then
+                        app_data.listener(request_message)
                     end
-                elseif response.__luna and app_data.pending_requests and app_data.pending_requests[response.id] and app_data.pending_requests[response.id].timestamp == response.time then
-                    app_data.pending_requests[response.id] = nil
-                elseif msg.message == "__luna__close" then
-                    if app_data.connected then
-                        app_data.client:close()
-                        app_data.connected = false
-                        app_data.trying_to_reconnect = true
-                        app_data.pending_requests = {}
-                        print("Disconnected from " .. app_data.host .. ":" .. app_data.port)
-                    end
-                elseif app_data.listener then
-                    app_data.listener(msg.message)
                 end
             end
 
@@ -412,7 +630,7 @@ app.update = function(dt)
             for request_id, req_data in pairs(app_data.pending_requests or {}) do
                 if current_time - req_data.start_time > (req_data.timeout or 5) then
                     app_data.pending_requests[request_id] = nil
-                    app_data.error_handler("Request timed out: "..req_data.path)
+                    app_data.error_handler("Request timed out: " .. req_data.path)
                 end
             end
         elseif app_data.trying_to_reconnect and app_data.reconnect_time then
