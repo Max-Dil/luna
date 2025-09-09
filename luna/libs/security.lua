@@ -349,10 +349,11 @@ SOFTWARE.]]
             return s, n;
         end
 
-        local bytestring_to_number = function(s)
+        local function bytestring_to_number(s)
             local num = 0;
-            for i = 0, s:len() - 1 do
-                num = num + s:byte(s:len() - i) * 0x100 ^ i;
+            local len = s:len();
+            for i = 0, len - 1 do
+                num = num + s:byte(len - i) * 0x100 ^ i;
             end
             return num;
         end

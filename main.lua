@@ -145,9 +145,9 @@ function love.load()
     -- end
     -- send(client, "api/echo text='value1' key2='value2' __id='cb9c1a5b-6910-4fb2-b457-a9c72a392d90' __time='1757352493' __noawait=True " .. string.rep("a='attack' ", 1000))
 
-    client:noawait_fetch("api/echo", function (data, err)
-        print("noawait_fetch response: ", #data, " sizewait:" ..#string.rep("hello world",89900))
-    end,{text = string.rep("hello world",89900)})
+    -- client:noawait_fetch("api/echo", function (data, err)
+    --     print("noawait_fetch response: ", #data, " sizewait:" ..#string.rep("hello world",89900))
+    -- end,{text = string.rep("hello world",89900)})
     -- local response = client:fetch("api/echo", {text = string.rep("hello world",99900)}, 100)
     -- print("size: "..#response, " size wait: "..#string.rep("hello world",99900))
 
