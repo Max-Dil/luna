@@ -30,8 +30,6 @@ local security = require("luna.libs.security")
 
 local app = {}
 local apps = {}
-local TIMEOUT_SECONDS = 10
-local PING_SECONDS = 1
 
 local function handle_error(app_data, message, err_level)
     if not app_data.no_errors then
@@ -45,8 +43,7 @@ end
 
 local encrypt_message = function(client, message)
     if client.shared_secret and client.nonce and client.token then
-        local success, err = pcall(security.chacha20.encrypt, message, security.utils.key_to_string(client.shared_secret),
-            security.base64.decode(client.nonce))
+        local success, err = pcall(security.chacha20.encrypt, message, client.shared_secret, client.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
         end
@@ -58,8 +55,7 @@ end
 
 local decrypt_message = function(client, message)
     if client.shared_secret and client.nonce and client.token then
-        local success, err = pcall(security.chacha20.decrypt, message, security.utils.key_to_string(client.shared_secret),
-            security.base64.decode(client.nonce))
+        local success, err = pcall(security.chacha20.decrypt, message, client.shared_secret, client.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
         end
@@ -81,6 +77,7 @@ func new_client
 func close_client
 func request_listener
 boolean debug
+int desconnect_time
 ]]
 app.new_app = function(config)
     local app_data
@@ -133,6 +130,12 @@ app.new_app = function(config)
 
         server_private = server_private,
         server_public = server_public,
+
+        disconnect_time = config.disconnect_time or 10,
+
+        set_disconnect_time = function (new_time)
+            app_data.disconnect_time = new_time
+        end
     }, { __index = router })
 
     local ok, err = pcall(function()
@@ -185,7 +188,7 @@ end
 
 local function validate_value(value, expected_types)
     if value == nil then
-        for _, t in ipairs(expected_types) do
+        for _, t in pairs(expected_types) do
             if t == "nil" then
                 return true
             end
@@ -195,7 +198,7 @@ local function validate_value(value, expected_types)
 
     local actual_type = type(value)
 
-    for _, expected_type in ipairs(expected_types) do
+    for _, expected_type in pairs(expected_types) do
         if expected_type == "number" and tonumber(value) ~= nil then
             return true
         elseif actual_type == expected_type then
@@ -267,7 +270,7 @@ app.update = function(dt)
         m.socket.update(m.server, dt)
 
         local messages = m.socket.receive_message(m.server)
-        for _, msg in ipairs(messages) do
+        for _, msg in pairs(messages) do
             local data, ip, port = msg.message, msg.ip, msg.port
             local client_key = ip .. ":" .. port
             local client = m.clients[client_key]
@@ -278,11 +281,10 @@ app.update = function(dt)
                     client = m.socket.new_connect(m.server, ip, port)
                     m.clients[client_key] = client
                     client.lastActive = os.time()
-                    client.lastPing = os.time()
-                    client.pingCountPerLast = 0
 
                     client.auth_token = security.utils.uuid()
-                    client.nonce = security.base64.encode(security.utils.generate_nonce())
+                    local nonce = security.base64.encode(security.utils.generate_nonce())
+                    client.nonce = security.base64.decode(nonce)
 
                     client.__send = client.send
                     client.send = function (self, data)
@@ -299,7 +301,7 @@ app.update = function(dt)
                             response = json.encode({
                                 pub = security.utils.key_to_string(m.server_public),
                                 token = client.auth_token,
-                                nonce = client.nonce
+                                nonce = nonce
                             }),
                             id = "handshake",
                             time = 0,
@@ -367,7 +369,7 @@ app.update = function(dt)
 
                             if auth_token == client.auth_token then
                                 client_pub = security.utils.string_to_key(client_pub)
-                                client.shared_secret = security.x25519.get_shared_key(m.server_private, client_pub)
+                                client.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(m.server_private, client_pub))
                                 local ok, send_err = pcall(function()
                                     client:__send(json.encode({
                                         __luna = true,
@@ -384,9 +386,7 @@ app.update = function(dt)
                             end
                         elseif name == "client_tok" then
                             if client.shared_secret and client.nonce then
-                                local decrypted = security.chacha20.decrypt(params,
-                                    security.utils.key_to_string(client.shared_secret),
-                                    security.base64.decode(client.nonce))
+                                local decrypted = security.chacha20.decrypt(params, client.shared_secret, client.nonce)
 
                                 if decrypted then
                                     client.auth_token = nil
@@ -408,20 +408,6 @@ app.update = function(dt)
                                 end
                             end
                         end
-                    end
-                elseif data == "ping" then
-                    if os.time() - client.lastPing < PING_SECONDS then
-                        if client.pingCountPerLast > 2 then
-                            if m.debug then
-                                print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                                    ":" .. client.port .. " <ping interval checed>")
-                            end
-                            client:close()
-                        end
-                        client.pingCountPerLast = 0
-                    else
-                        client.lastPing = os.time()
-                        client.pingCountPerLast = client.pingCountPerLast + 1
                     end
                 else
                     local success, err = decrypt_message(client, data)
@@ -472,7 +458,7 @@ app.update = function(dt)
 
         local currentTime = os.time()
         for client_key, client in pairs(m.clients) do
-            if currentTime - client.lastActive > TIMEOUT_SECONDS then
+            if currentTime - client.lastActive > m.disconnect_time then
                 if m.debug then
                     print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
                         ":" .. client.port .. " <due to timeout>")

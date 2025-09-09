@@ -15,7 +15,18 @@ function love.load()
             -- print("req: "..req)
             -- print(client.send)
         end,
+
+        disconnect_time = 10, -- the time after which the client will disconnect if you do not send requests is 10 by default.
     })
+
+    local default_router = app:new_router({
+        prefix = "default",
+    })
+    default_router:new({
+        prefix = "ping",
+        fun = function(args, client) end,
+    })
+
     local main_router = app:new_router({
         prefix = "api",
     })
@@ -94,7 +105,14 @@ function love.load()
     -- end,{text = string.rep("hello world",100)})
 end
 
+local t = 0
 function love.update(dt)
     lunac.update(dt)
     luna.update()
+
+    t = t + dt
+    if t > 2 then
+        client:noawait_fetch("default/ping", function (data, err)end,{})
+        t = 0
+    end
 end

@@ -29,12 +29,11 @@ local security = require("lunac.libs.security")
 
 local app = {}
 local apps = {}
-local PING_INTERVAL = 2
 
 local encrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
         local success, err = pcall(security.chacha20.encrypt, message,
-            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+            app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
         end
@@ -47,7 +46,7 @@ end
 local decrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
         local success, err = pcall(security.chacha20.decrypt, message,
-            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+            app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
         end
@@ -78,7 +77,7 @@ local function try_connect(app_data)
     if client then
         app_data.pending_noawait_requests = {}
         app_data.pending_requests = {}
-        assert(client:setsockname(app_data.host, 0), "Failed to bind client socket")
+        client:setsockname(app_data.host, 0)
         client:settimeout(0)
         app_data.client = client
         app_data.connected = true
@@ -92,7 +91,7 @@ local function try_connect(app_data)
         local TIMEOUT = 5
         local start_time
 
-        local success, err = pcall(app_data.socket.send_message, "ping", app_data.host, app_data.port)
+        local success, err = pcall(app_data.socket.send_message, "pls connect", app_data.host, app_data.port)
         if not success then
             app_data.error_handler("Init send failed: " .. err)
             app_data.connected = false
@@ -100,7 +99,6 @@ local function try_connect(app_data)
             app_data.client = nil
             return false
         end
-        app_data.ping_timer = 0
 
         local server_pub, token, nonce
         local error_message
@@ -141,8 +139,8 @@ local function try_connect(app_data)
             return false
         end
 
-        app_data.nonce = nonce
-        app_data.shared_secret = security.x25519.get_shared_key(app_data.client_private, server_pub)
+        app_data.nonce = security.base64.decode(nonce)
+        app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private, server_pub))
 
         success, err = pcall(app_data.socket.send_message,
             "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
@@ -180,8 +178,7 @@ local function try_connect(app_data)
             return false
         end
 
-        local client_token = security.chacha20.encrypt(app_data.client_token,
-            security.utils.key_to_string(app_data.shared_secret), security.base64.decode(app_data.nonce))
+        local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
         success, err = pcall(app_data.socket.send_message,
             "client_tok" .. client_token,
             app_data.host, app_data.port)
@@ -219,7 +216,6 @@ local function try_connect(app_data)
         end
 
         print("Succefully new security CONNECTION")
-        app_data.ping_timer = 0
         app_data.no_server_decrypt = nil
         --------------------------------------------
 
@@ -370,22 +366,10 @@ local class = {
                 end
             end
 
-            app_data.ping_timer = app_data.ping_timer + app_data.dt
-            if app_data.ping_timer >= PING_INTERVAL then
-                local ping_request = "ping"
-                if ping_request then
-                    local success, err = pcall(app_data.socket.send_message, ping_request, app_data.host, app_data.port)
-                    if not success then
-                        app_data.error_handler("Ping send failed: " .. err)
-                    end
-                end
-                app_data.ping_timer = 0
-            end
-
             app_data.socket.update(app_data.client, app_data.dt)
 
             local messages = app_data.socket.receive_message(app_data.client)
-            for _, msg in ipairs(messages) do
+            for _, msg in pairs(messages) do
                 if app_data.no_server_decrypt then
                     success, err = true, msg.message
                 else
@@ -542,7 +526,6 @@ app.connect = function(config)
         pending_noawait_requests = {},
         connect_server = config.connect_server,
         disconnect_server = config.disconnect_server,
-        ping_timer = 0,
         dt = 1 / 60,
         socket = message_manager(),
         set_max_message_size = function(new_max_messages_size)
@@ -577,19 +560,10 @@ app.update = function(dt)
     for name, app_data in pairs(apps) do
         app_data.dt = dt
         if app_data.connected then
-            app_data.ping_timer = app_data.ping_timer + dt
-            if app_data.ping_timer >= PING_INTERVAL then
-                local success, err = pcall(app_data.socket.send_message, "ping", app_data.host, app_data.port)
-                if not success then
-                    app_data.error_handler("Ping send failed: " .. err)
-                end
-                app_data.ping_timer = 0
-            end
-
             app_data.socket.update(app_data.client, dt)
 
             local messages = app_data.socket.receive_message(app_data.client)
-            for _, msg in ipairs(messages) do
+            for _, msg in pairs(messages) do
                 local success, err = true, msg.message
                 if not app_data.no_server_decrypt then
                     success, err = decrypt_message(app_data, msg.message)

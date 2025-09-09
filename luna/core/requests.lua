@@ -169,7 +169,7 @@ end
 
 local function validate_value(value, expected_types)
     if value == nil then
-        for _, t in ipairs(expected_types) do
+        for _, t in pairs(expected_types) do
             if t == "nil" then
                 return true
             end
@@ -179,7 +179,7 @@ local function validate_value(value, expected_types)
 
     local actual_type = type(value)
 
-    for _, expected_type in ipairs(expected_types) do
+    for _, expected_type in pairs(expected_types) do
         if expected_type == "number" and tonumber(value) ~= nil then
             return true
         elseif actual_type == expected_type then
@@ -284,7 +284,7 @@ req.process = function(router, client_data, data)
     end
 
     local context = { request = request, client = client_data, stop = false, ip = client_data.ip, port = client_data.port }
-    for _, middleware in ipairs(request_handler.middlewares) do
+    for _, middleware in pairs(request_handler.middlewares) do
         local ok, result = pcall(middleware, context, true)
         if not ok then
             if request_handler.error_handler then
@@ -328,7 +328,7 @@ req.process = function(router, client_data, data)
     end
 
     context.response = result
-    for _, middleware in ipairs(request_handler.middlewares) do
+    for _, middleware in pairs(request_handler.middlewares) do
         local ok, mw_result = pcall(middleware, context, false)
         if not ok then
             if request_handler.error_handler then

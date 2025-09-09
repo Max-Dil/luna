@@ -181,7 +181,7 @@ local function create()
                         local frag_info = status.fragments[i]
                         if not frag_info.acknowledged then
                             local already_in_queue = false
-                            for _, f in ipairs(status.fragments_to_send) do
+                            for _, f in pairs(status.fragments_to_send) do
                                 if f.fragment_num == i then
                                     already_in_queue = true
                                     break
