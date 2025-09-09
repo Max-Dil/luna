@@ -399,6 +399,19 @@ SOFTWARE.]]
         local XOR, LROT = Bitops.u32_xor, Bitops.u32_lrot;
         local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
 
+        local MOD = 0x100000000
+        local MASK = 0xFFFFFFFF
+
+        local is_luajit = type(jit) == 'table'
+        if is_luajit then
+            local bit = require('bit')
+            XOR = bit.bxor
+            LROT = bit.rol
+        else
+            XOR = Bitops.u32_xor
+            LROT = Bitops.u32_lrot
+        end
+
         local function unpack(s, len)
             local array = {};
             local count = 0;
@@ -429,16 +442,17 @@ SOFTWARE.]]
             return table.concat(t);
         end
 
-        local quarter_round = function(s, a, b, c, d)
-            s[a] = (s[a] + s[b]) % 0x100000000; s[d] = LROT(XOR(s[d], s[a]), 16);
-            s[c] = (s[c] + s[d]) % 0x100000000; s[b] = LROT(XOR(s[b], s[c]), 12);
-            s[a] = (s[a] + s[b]) % 0x100000000; s[d] = LROT(XOR(s[d], s[a]), 8);
-            s[c] = (s[c] + s[d]) % 0x100000000; s[b] = LROT(XOR(s[b], s[c]), 7);
+        local function quarter_round(s, a, b, c, d)
+            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 16);
+            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 12);
+            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 8);
+            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
         end
 
+        local CONSTANTS = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574}
         local block = function(key, nonce, counter)
             local init = {
-                0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+                CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],
                 key[1], key[2], key[3], key[4],
                 key[5], key[6], key[7], key[8],
                 counter, nonce[1], nonce[2], nonce[3],
