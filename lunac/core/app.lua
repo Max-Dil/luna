@@ -198,7 +198,7 @@ local function try_connect(app_data)
             return false
         end
 
-        print("Succefully new security CONNECTION")
+        print("Successfully new security CONNECTION")
         app_data.no_server_decrypt = nil
         --------------------------------------------
 
@@ -222,7 +222,7 @@ local function try_connect(app_data)
     end
 end
 
-local function serelizate_request(args, app_data, request_id, timestamp, request, noawait)
+local function serialize_request(args, app_data, request_id, timestamp, request, noawait)
     local arg_parts = {}
     for k, v in pairs(args) do
         local text
@@ -283,7 +283,7 @@ local class = {
 
         local request = path
         if args then
-            request = serelizate_request(args, app_data, request_id, timestamp, request, false)
+            request = serialize_request(args, app_data, request_id, timestamp, request, false)
             if not request then
                 return nil, "Failed to serialize request"
             end
@@ -441,7 +441,7 @@ local class = {
 
         local request = path
         if args then
-            request = serelizate_request(args, app_data, request_id, timestamp, request, true)
+            request = serialize_request(args, app_data, request_id, timestamp, request, true)
             if not request then
                 return nil, "Failed to serialize request"
             end

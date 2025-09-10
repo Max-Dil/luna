@@ -32,7 +32,7 @@ req.new = function(router, config)
         fun = config.fun,
         no_errors = config.no_errors,
         validate = config.validate,
-        responce_validate = config.responce_validate,
+        response_validate = config.response_validate,
         error_handler = config.error_handler or function(message) 
             print("Error in request prefix: "..req_data.prefix.." error: "..message) 
         end,
@@ -315,7 +315,7 @@ req.process = function(router, client_data, data)
     if request_handler.async then
         local coro = coroutine.create(request_handler.fun)
         router.app.running_funs[coro] = {request_handler, request, client_data}
-        result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil, no_responce = true}
+        result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil, no_response = true}
     else
         local ok, handler_result = pcall(request_handler.fun, request.args, client_data)
         if not ok then
@@ -344,9 +344,9 @@ req.process = function(router, client_data, data)
         end
     end
 
-    if not request_handler.async and request_handler.responce_validate then
-        if not validate_value(result.response, request_handler.responce_validate) then
-            local expected_str = table.concat(request_handler.responce_validate, " or ")
+    if not request_handler.async and request_handler.response_validate then
+        if not validate_value(result.response, request_handler.response_validate) then
+            local expected_str = table.concat(request_handler.response_validate, " or ")
             local actual_type = type(result.response)
             local err_msg = string.format("Response expected to be %s, got %s (%s)",
                 expected_str, actual_type, tostring(result.response))

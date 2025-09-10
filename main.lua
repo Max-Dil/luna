@@ -97,7 +97,7 @@ function love.load()
 
     main_router:new({
         validate = {text = {"string", "nil"}},
-        responce_validate = {"string"},
+        response_validate = {"string"},
         prefix = "echo",
         -- async = true,
         fun = function(args, client)

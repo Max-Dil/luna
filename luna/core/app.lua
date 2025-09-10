@@ -69,7 +69,7 @@ func new_client
 func close_client
 func request_listener
 boolean debug
-int desconnect_time
+int disconnect_time
 ]]
 app.new_app = function(config)
     local app_data
@@ -225,9 +225,9 @@ app.update = function(dt)
                     request_result = { response = { request = request.path, error = tostring(result), time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil } }
                 end
 
-                if not request_result and request_handler.responce_validate then
-                    if not validate_value(result, request_handler.responce_validate) then
-                        local expected_str = table.concat(request_handler.responce_validate, " or ")
+                if not request_result and request_handler.response_validate then
+                    if not validate_value(result, request_handler.response_validate) then
+                        local expected_str = table.concat(request_handler.response_validate, " or ")
                         local actual_type = type(result)
                         local err_msg = string.format("Response expected to be %s, got %s (%s)",
                             expected_str, actual_type, tostring(result))
@@ -429,10 +429,10 @@ app.update = function(dt)
                                 if type(response) == "table" and (response.request or response.error or response.response or response.id) then
                                     response_to_send = response
                                 else
-                                    response_to_send = { no_responce = true }
+                                    response_to_send = { no_response = true }
                                 end
 
-                                if not response_to_send.no_responce then
+                                if not response_to_send.no_response then
                                     local ok, send_err = pcall(function()
                                         client:send(json.encode(response_to_send))
                                     end)
