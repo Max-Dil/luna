@@ -65,7 +65,7 @@ function love.load()
         max_ip_connected = 20,
         no_errors = true,
         debug = true,
-        request_listener = function (req, client)
+        request_listener = function(req, client)
             -- print("req: "..req)
             -- print(client.send)
         end,
@@ -87,7 +87,8 @@ function love.load()
 
     local echo_middleware = function(context, is_pre)
         if is_pre then
-            print("Middleware: Processing request for path "..context.request.path.." with args: "..require("luna.libs.json").encode(context.request.args))
+            print("Middleware: Processing request for path " ..
+            context.request.path .. " with args: " .. require("luna.libs.json").encode(context.request.args))
         else
             if context.response.response then
                 context.response.response = context.response.response .. " (processed by middleware)"
@@ -127,7 +128,7 @@ function love.load()
         no_errors = true,
         server = luna,
         reconnect_time = 5,
-        listener = function (message)
+        listener = function(message)
             print("New message client:send     ", message)
         end
     })
@@ -135,6 +136,7 @@ function love.load()
     client:noawait_fetch("api/echo", function (data, err)
         print("noawait_fetch response: ", data, "err:" ..tostring(err))
     end,{text = "hello world2"})
+
     local response = client:fetch("api/echo", {text = "hello world"})
     print("Echo data: "..response)
 

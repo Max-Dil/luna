@@ -202,6 +202,11 @@ local function try_connect(app_data)
         app_data.no_server_decrypt = nil
         --------------------------------------------
 
+        if type(jit) ~= "table" then
+            start_time = socket.gettime()
+            while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
+        end
+
         print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
             local ok, cb_err = pcall(app_data.connect_server)
