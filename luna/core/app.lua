@@ -54,15 +54,7 @@ local encrypt_message = function(client, message)
 end
 
 local decrypt_message = function(client, message)
-    if client.shared_secret and client.nonce and client.token then
-        local success, err = pcall(security.chacha20.decrypt, message, client.shared_secret, client.nonce)
-        if success then
-            err = err:match("^(.-)%z*$") or err
-        end
-        return success, err
-    else
-        return false, "Error not found connect args"
-    end
+    return encrypt_message(client, message)
 end
 
 --[[
@@ -167,7 +159,7 @@ app.remove = function(app_data)
     local name = app_data["name"]
     apps[name] = nil
 
-    for client_key, client_data in pairs(app_data.clients) do
+    for _, client_data in pairs(app_data.clients) do
         client_data:close()
         if app_data.close_client then
             local ok, err = pcall(app_data.close_client, client_data)
@@ -270,6 +262,7 @@ app.update = function(dt)
         m.socket.update(m.server, dt)
 
         local messages = m.socket.receive_message(m.server)
+        local currentTime = os.time()
         for _, msg in pairs(messages) do
             local data, ip, port = msg.message, msg.ip, msg.port
             local client_key = ip .. ":" .. port
@@ -280,7 +273,7 @@ app.update = function(dt)
                 if m.ip_counts[ip] <= m.max_ip_connected then
                     client = m.socket.new_connect(m.server, ip, port)
                     m.clients[client_key] = client
-                    client.lastActive = os.time()
+                    client.lastActive = currentTime
 
                     client.auth_token = security.utils.uuid()
                     local nonce = security.base64.encode(security.utils.generate_nonce())
@@ -357,7 +350,7 @@ app.update = function(dt)
             end
 
             if client then
-                client.lastActive = os.time()
+                client.lastActive = currentTime
                 if client.auth_token then
                     local name = string.sub(data, 1, 10)
                     local params = string.sub(data, 11, string.len(data))
@@ -456,7 +449,6 @@ app.update = function(dt)
             end
         end
 
-        local currentTime = os.time()
         for client_key, client in pairs(m.clients) do
             if currentTime - client.lastActive > m.disconnect_time then
                 if m.debug then

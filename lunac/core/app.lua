@@ -44,16 +44,7 @@ local encrypt_message = function(app_data, message)
 end
 
 local decrypt_message = function(app_data, message)
-    if app_data.shared_secret and app_data.nonce then
-        local success, err = pcall(security.chacha20.decrypt, message,
-            app_data.shared_secret, app_data.nonce)
-        if success then
-            err = err:match("^(.-)%z*$") or err
-        end
-        return success, err
-    else
-        return false, "Error not found connect args"
-    end
+    return encrypt_message(app_data, message)
 end
 
 local function parse_response(line)
@@ -62,14 +53,6 @@ local function parse_response(line)
         return result
     end
     return { request = "unknown", response = line, id = "unknown id", time = 0 }
-end
-
-local function uuid()
-    local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-    return string.gsub(template, '[xy]', function(c)
-        local v = (c == 'x') and math.random(0, 15) or math.random(8, 11)
-        return string.format('%x', v)
-    end)
 end
 
 local function try_connect(app_data)
@@ -295,7 +278,7 @@ local class = {
             end
         end
 
-        local request_id = uuid()
+        local request_id = security.utils.uuid()
         local timestamp = tostring(os.time())
 
         local request = path
@@ -453,7 +436,7 @@ local class = {
             end
         end
 
-        local request_id = uuid()
+        local request_id = security.utils.uuid()
         local timestamp = tostring(os.time())
 
         local request = path
@@ -503,7 +486,7 @@ app.connect = function(config)
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
-    local client_token = uuid()
+    local client_token = security.utils.uuid()
     local client_private, client_public = security.x25519.generate_keypair()
 
     local app_data

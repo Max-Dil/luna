@@ -393,22 +393,22 @@ SOFTWARE.]]
     end
 
     do
-        local Bitops = security.bitops
-        local Util = security.util
+        local Bitops = security.bitops;
+        local Util = security.util;
 
         local XOR, LROT = Bitops.u32_xor, Bitops.u32_lrot;
         local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
 
-        local MOD = 0x100000000
+        local MOD = 0x100000000;
 
-        local is_luajit = type(jit) == 'table'
+        local is_luajit = type(jit) == 'table';
         if is_luajit then
-            local bit = require('bit')
-            XOR = bit.bxor
-            LROT = bit.rol
+            local bit = require('bit');
+            XOR = bit.bxor;
+            LROT = bit.rol;
         else
-            XOR = Bitops.u32_xor
-            LROT = Bitops.u32_lrot
+            XOR = Bitops.u32_xor;
+            LROT = Bitops.u32_lrot;
         end
 
         local function unpack(s, len)
@@ -448,7 +448,7 @@ SOFTWARE.]]
             s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
         end
 
-        local CONSTANTS = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574}
+        local CONSTANTS = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
         local block = function(key, nonce, counter)
             local init = {
                 CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],
@@ -497,7 +497,7 @@ SOFTWARE.]]
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
 
-                cipher_count = cipher_count + 1
+                cipher_count = cipher_count + 1;
                 cipher[cipher_count] = pack(cipher_block);
 
                 counter = counter + 1;
@@ -507,12 +507,12 @@ SOFTWARE.]]
                 local plain_block = unpack(plain:sub(counter * 64 + 1));
                 local cipher_block = {};
 
-                chunks = ceil((plain_len % 64) / 4)
+                chunks = ceil((plain_len % 64) / 4);
                 for j = 1, chunks do
                     cipher_block[j] = XOR(plain_block[j], key_stream[j]);
                 end
 
-                cipher_count = cipher_count + 1
+                cipher_count = cipher_count + 1;
                 cipher[cipher_count] = pack(cipher_block);
             end
             return table.concat(cipher);

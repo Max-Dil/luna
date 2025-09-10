@@ -64,7 +64,7 @@ function love.load()
         name = "test server",
         max_ip_connected = 20,
         no_errors = true,
-        debug = false,
+        debug = true,
         request_listener = function (req, client)
             -- print("req: "..req)
             -- print(client.send)
@@ -140,10 +140,21 @@ function love.load()
 
     -- client:noawait_fetch("api/close", function()end,{})
 
-    -- local send = function(app_data, data)
-    --     pcall(app_data.socket.send_message, data, app_data.host, app_data.port)
+    -- local send = function(app_data, message)
+    --     local security = require("luna.libs.security")
+    --     if app_data.shared_secret and app_data.nonce then
+    --         local success, err = pcall(security.chacha20.encrypt, message,
+    --             app_data.shared_secret, app_data.nonce)
+    --         if success then
+    --             err = err:match("^(.-)%z*$") or err
+    --             pcall(app_data.socket.send_message, err, app_data.host, app_data.port)
+    --         end
+    --         return success, err
+    --     else
+    --         return false, "Error not found connect args"
+    --     end
     -- end
-    -- send(client, "api/echo text='value1' key2='value2' __id='cb9c1a5b-6910-4fb2-b457-a9c72a392d90' __time='1757352493' __noawait=True " .. string.rep("a='attack' ", 1000))
+    -- send(client, "api/echo text='value1' key2='value2' __id='cb9c1a5b-6910-4fb2-b457-a9c72a392d90' __time='1757352493' __noawait=True __client_token='"..client.client_token.."'")
 
     -- client:noawait_fetch("api/echo", function (data, err)
     --     print("noawait_fetch response: ", #data, " sizewait:" ..#string.rep("hello world",89900))
