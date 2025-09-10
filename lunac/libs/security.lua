@@ -400,7 +400,6 @@ SOFTWARE.]]
         local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
 
         local MOD = 0x100000000
-        local MASK = 0xFFFFFFFF
 
         local is_luajit = type(jit) == 'table'
         if is_luajit then
@@ -668,34 +667,47 @@ SOFTWARE.]]
         local encode = function(s)
             local r = s:len() % 3;
             s = r == 0 and s or s .. ("\0"):rep(3 - r);
-            local b64 = "";
-            for i = 1, s:len(), 3 do
+            local b64 = {};
+            local count = 0;
+            local len = s:len();
+            local floor = math.floor;
+            for i = 1, len, 3 do
                 local b1, b2, b3 = s:byte(i, i + 2);
-                b64 = b64 .. enc[math.floor(b1 / 0x04)];
-                b64 = b64 .. enc[math.floor(b2 / 0x10) + (b1 % 0x04) * 0x10];
-                b64 = b64 .. enc[math.floor(b3 / 0x40) + (b2 % 0x10) * 0x04];
-                b64 = b64 .. enc[b3 % 0x40];
+                count = count + 1;
+                b64[count] = enc[floor(b1 / 0x04)];
+                count = count + 1;
+                b64[count] = enc[floor(b2 / 0x10) + (b1 % 0x04) * 0x10];
+                count = count + 1;
+                b64[count] = enc[floor(b3 / 0x40) + (b2 % 0x10) * 0x04];
+                count = count + 1;
+                b64[count] = enc[b3 % 0x40];
             end
-            b64 = b64 .. (r == 0 and "" or ("="):rep(3 - r));
-            return b64;
+            count = count + 1;
+            b64[count] = (r == 0 and "" or ("="):rep(3 - r));
+            return table.concat(b64);
         end
 
         local decode = function(b64)
             local b, p = b64:gsub("=", "");
-            local s = "";
-            for i = 1, b:len(), 4 do
+            local s = {};
+            local count = 0;
+            local len = b:len();
+            local char, floor = string.char, math.floor;
+            for i = 1, len, 4 do
                 local b1 = dec[b:sub(i, i)];
                 local b2 = dec[b:sub(i + 1, i + 1)];
                 local b3 = dec[b:sub(i + 2, i + 2)];
                 local b4 = dec[b:sub(i + 3, i + 3)];
-                s = s .. string.char(
-                    b1 * 0x04 + math.floor(b2 / 0x10),
-                    (b2 % 0x10) * 0x10 + math.floor(b3 / 0x04),
+                count = count + 1;
+                s[count] = char(
+                    b1 * 0x04 + floor(b2 / 0x10),
+                    (b2 % 0x10) * 0x10 + floor(b3 / 0x04),
                     (b3 % 0x04) * 0x40 + b4
                 );
             end
-            s = s:sub(1, -(p + 1));
-            return s;
+            local result = table.concat(s);
+            result = result:sub(1, -(p + 1));
+            return result;
         end
 
         security.base64 = {
@@ -890,47 +902,50 @@ SOFTWARE.]]
 
     do
         local function key_to_string(key)
-            local bytes = {}
+            local bytes = {};
+            local char = string.char;
             for i = 0, 31 do
-                bytes[i + 1] = string.char(key[i] or 0)
+                bytes[i + 1] = char(key[i] or 0);
             end
-            return security.base64.encode(table.concat(bytes))
+            return security.base64.encode(table.concat(bytes));
         end
 
         local function string_to_key(str)
-            local decoded = security.base64.decode(str)
-            if not decoded or #decoded ~= 32 then
-                error("Invalid key length or decoding error")
+            local decoded = security.base64.decode(str);
+            local len = #decoded;
+            if not decoded or len ~= 32 then
+                error("Invalid key length or decoding error");
             end
-            local key = {}
-            for i = 1, #decoded do
-                key[i - 1] = string.byte(decoded, i)
+            local key = {};
+            local byte = string.byte;
+            for i = 1, len do
+                key[i - 1] = byte(decoded, i);
             end
-            return key
+            return key;
         end
 
         local function generate_nonce()
-            local nonce = ""
+            local nonce = "";
             for i = 1, 12 do
-                nonce = nonce .. string.char(math.random(0, 255))
+                nonce = nonce .. string.char(math.random(0, 255));
             end
-            return security.base64.encode(nonce)
+            return security.base64.encode(nonce);
         end
 
         local function uuid()
-            local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+            local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
             return string.gsub(template, '[xy]', function(c)
-                local v = (c == 'x') and math.random(0, 15) or math.random(8, 11)
-                return string.format('%x', v)
+                local v = (c == 'x') and math.random(0, 15) or math.random(8, 11);
+                return string.format('%x', v);
             end)
         end
 
         local function split(str, sep)
-            local result = {}
+            local result = {};
             for part in str:gmatch("[^" .. sep .. "]+") do
-                table.insert(result, part)
+                table.insert(result, part);
             end
-            return result
+            return result;
         end
 
         security.utils = {
@@ -939,7 +954,7 @@ SOFTWARE.]]
             generate_nonce = generate_nonce,
             uuid = uuid,
             split = split
-        }
+        };
     end
 end
 
