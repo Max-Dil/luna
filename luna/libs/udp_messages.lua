@@ -223,6 +223,7 @@ local function create()
         end
 
         function connect:close()
+            pcall(function () self.socket:close() end)
             if connections[client_key] then
                 fragment_buffer[client_key] = nil
                 connections[client_key] = nil

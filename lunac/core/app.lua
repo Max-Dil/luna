@@ -36,6 +36,7 @@ local encrypt_message = function(app_data, message)
             app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
+            success, err = pcall(security.base64.encode, err)
         end
         return success, err
     else
@@ -44,7 +45,19 @@ local encrypt_message = function(app_data, message)
 end
 
 local decrypt_message = function(app_data, message)
-    return encrypt_message(app_data, message)
+    if app_data.shared_secret and app_data.nonce then
+        local success, err = pcall(security.base64.decode, message)
+        if success then
+            success, err = pcall(security.chacha20.encrypt, err,
+                app_data.shared_secret, app_data.nonce)
+            if success then
+                err = err:match("^(.-)%z*$") or err
+            end
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
+    end
 end
 
 local function parse_response(line)
@@ -162,6 +175,8 @@ local function try_connect(app_data)
         end
 
         local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
+        client_token = client_token:match("^(.-)%z*$") or client_token
+        client_token = security.base64.encode(client_token)
         success, err = pcall(app_data.socket.send_message,
             "client_tok" .. client_token,
             app_data.host, app_data.port)
@@ -200,6 +215,8 @@ local function try_connect(app_data)
 
         print("Successfully new security CONNECTION")
         app_data.no_server_decrypt = nil
+
+        app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
         --------------------------------------------
 
         if type(jit) ~= "table" then
@@ -389,7 +406,11 @@ local class = {
                         end
                     elseif request_message == "__luna__close" then
                         if app_data.connected then
-                            app_data.client:close()
+                            if app_data.client_connect then
+                                app_data.client_connect:close()
+                            else
+                                pcall(function () app_data.client:close() end)
+                            end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
                             app_data.pending_requests = {}
@@ -405,7 +426,7 @@ local class = {
                 end
             end
 
-            if final_response or final_error or app_data.client.is_close then
+            if final_response or final_error or (app_data.client_connect and app_data.client_connect.is_close) then
                 break
             end
 
@@ -575,7 +596,11 @@ app.update = function(dt)
                         app_data.pending_requests[response.id] = nil
                     elseif request_message == "__luna__close" then
                         if app_data.connected then
-                            app_data.client:close()
+                            if app_data.client_connect then
+                                app_data.client_connect:close()
+                            else
+                                pcall(function () app_data.client:close() end)
+                            end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
                             app_data.pending_requests = {}
@@ -649,7 +674,11 @@ app.close = function(app_data)
     if not app_data then return end
 
     if app_data.connected then
-        app_data.client:close()
+        if app_data.client_connect then
+            app_data.client_connect:close()
+        else
+            pcall(function () app_data.client:close() end)
+        end
         app_data.connected = false
         app_data.trying_to_reconnect = false
         print("Disconnected from " .. app_data.host .. ":" .. app_data.port)

@@ -41,11 +41,13 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local encrypt_message = function(client, message)
-    if client.shared_secret and client.nonce and client.token then
-        local success, err = pcall(security.chacha20.encrypt, message, client.shared_secret, client.nonce)
+local encrypt_message = function(app_data, message)
+    if app_data.shared_secret and app_data.nonce then
+        local success, err = pcall(security.chacha20.encrypt, message,
+            app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
+            success, err = pcall(security.base64.encode, err)
         end
         return success, err
     else
@@ -53,8 +55,20 @@ local encrypt_message = function(client, message)
     end
 end
 
-local decrypt_message = function(client, message)
-    return encrypt_message(client, message)
+local decrypt_message = function(app_data, message)
+    if app_data.shared_secret and app_data.nonce then
+        local success, err = pcall(security.base64.decode, message)
+        if success then
+            success, err = pcall(security.chacha20.encrypt, err,
+                app_data.shared_secret, app_data.nonce)
+            if success then
+                err = err:match("^(.-)%z*$") or err
+            end
+        end
+        return success, err
+    else
+        return false, "Error not found connect args"
+    end
 end
 
 --[[
@@ -379,25 +393,24 @@ app.update = function(dt)
                             end
                         elseif name == "client_tok" then
                             if client.shared_secret and client.nonce then
-                                local decrypted = security.chacha20.decrypt(params, client.shared_secret, client.nonce)
+                                local success, decrypted = decrypt_message(client, params)
+                                if success and decrypted then
+                                        client.auth_token = nil
+                                        client.token = decrypted
 
-                                if decrypted then
-                                    client.auth_token = nil
-                                    client.token = decrypted
-
-                                    local ok, send_err = pcall(function()
-                                        client:__send(json.encode({
-                                            __luna = true,
-                                            request = "connect",
-                                            response = true,
-                                            id = "connect",
-                                            time = 0,
-                                            __noawait = true,
-                                        }))
-                                    end)
-                                    if not ok then
-                                        handle_error(m, "Error sending token connect: " .. send_err)
-                                    end
+                                        local ok, send_err = pcall(function()
+                                            client:__send(json.encode({
+                                                __luna = true,
+                                                request = "connect",
+                                                response = true,
+                                                id = "connect",
+                                                time = 0,
+                                                __noawait = true,
+                                            }))
+                                        end)
+                                        if not ok then
+                                            handle_error(m, "Error sending token connect: " .. send_err)
+                                        end
                                 end
                             end
                         end
@@ -453,7 +466,7 @@ app.update = function(dt)
             if currentTime - client.lastActive > m.disconnect_time then
                 if m.debug then
                     print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                        ":" .. client.port .. " <due to timeout>")
+                        ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
                 end
                 m.clients[client_key]:close()
             end

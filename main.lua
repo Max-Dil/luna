@@ -180,3 +180,34 @@ function love.update(dt)
         t = 0
     end
 end
+
+
+-- _G.love = love
+-- local lunac
+-- function love.load()
+--     lunac = require("lunac")
+--     _G.client = lunac.connect_to_app({
+--         host = "127.0.0.1",
+--         port = 8081,
+--         name = "test server",
+--         no_errors = true,
+--     })
+
+--     client:noawait_fetch("api/echo", function (data, err)
+--         print("noawait_fetch response: ", data, "err:" ..tostring(err))
+--     end,{text = "hello world2"})
+
+--     local response = client:fetch("api/echo", {text = "hello world"})
+--     print("Echo data: "..response)
+-- end
+
+-- local t = 0
+-- function love.update(dt)
+--     lunac.update(dt)
+
+--     t = t + dt
+--     if t > 2 then
+--         client:noawait_fetch("default/ping",function()end,{})
+--         t = 0
+--     end
+-- end
