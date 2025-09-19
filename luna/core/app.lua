@@ -283,6 +283,9 @@ app.update = function(dt)
             local client = m.clients[client_key]
 
             if not client then
+                if not ip:match("^%d+%.%d+%.%d+%.%d+$") then
+                    handle_error(m, "The client's IP address is invalid", 2)
+                end
                 m.ip_counts[ip] = (m.ip_counts[ip] or 0) + 1
                 if m.ip_counts[ip] <= m.max_ip_connected then
                     client = m.socket.new_connect(m.server, ip, port)

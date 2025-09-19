@@ -512,7 +512,8 @@ app.connect = function(config)
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
-    local client_token = security.utils.uuid()
+    local client_token_private = security.x25519.generate_keypair()
+    local client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
     local client_private, client_public = security.x25519.generate_keypair()
 
     local app_data
