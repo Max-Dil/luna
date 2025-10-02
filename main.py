@@ -42,7 +42,7 @@ print("Echo data: ", response)
 last_ping_time = time.time()
 while True:
     current_time = time.time()
-    if current_time - last_ping_time >= 3:
+    if current_time - last_ping_time >= 10:
         client.noawait_fetch("default/ping", lambda data, err: (), {})
         last_ping_time = current_time
 

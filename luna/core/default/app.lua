@@ -23,7 +23,7 @@ SOFTWARE.
 ]]
 
 local socket = require("socket")
-local router = require("luna.core.router")
+local router = require("luna.core.default.router")
 local json = require("luna.libs.json")
 local message_manager = require("luna.libs.udp_messages")
 local security = require("luna.libs.security")
@@ -155,10 +155,13 @@ app.new_app = function(config)
     if not ok then
         handle_error(app_data, "Failed to start app on " .. app_data.host .. ":" .. app_data.port .. ": " .. err)
         return nil, err
+    else
+        if app_data.debug then
+            print("App '" .. app_data.name .. "' started on " .. app_data.host .. ":" .. app_data.port)
+        end
+        apps[app_data.name] = app_data
     end
 
-    print("App '" .. app_data.name .. "' started on " .. app_data.host .. ":" .. app_data.port)
-    apps[app_data.name] = app_data
     return app_data
 end
 

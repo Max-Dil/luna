@@ -30,8 +30,13 @@ for key, value in pairs(core[1]) do
     luna[key] = value
 end
 
-luna.update = function ()
-    core[2].app_update()
+luna.update = function (dt)
+    if core[2].app_update then
+        core[2].app_update(dt)
+    end
+    if core[2].web_app_update then
+        core[2].web_app_update(dt)
+    end
 end
 
 return luna

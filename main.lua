@@ -63,7 +63,7 @@ function love.load()
         port = 8081,
         name = "test server",
         max_ip_connected = 20,
-        no_errors = true,
+        -- no_errors = true,
         debug = true,
         request_listener = function(req, client)
             -- print("req: "..req)
@@ -211,3 +211,94 @@ end
 --         t = 0
 --     end
 -- end
+
+-- local lunac
+-- function love.load()
+--     lunac = require("lunac")
+--     _G.client = lunac.connect_to_app({
+--         host = "127.0.0.1",
+--         port = 1025,
+--         name = "test server",
+
+--         reconnect_time = 5
+--     })
+
+--     -- local response = client:fetch("api/echo", {text = "hello world"})
+--     -- print("Echo data: "..response)
+-- end
+
+-- local t = 0
+-- function love.update(dt)
+--     lunac.update(dt)
+
+--     t = t + dt
+--     if t > 2 then
+--         client:noawait_fetch("default/ping",function()end,{})
+--         t = 0
+--     end
+-- end
+
+
+
+-------------------
+-- web_app_test --
+-------------------
+-- _G.love = love
+-- local luna
+-- local inc_clients = {}
+
+-- function love.load()
+--     luna = require("luna.init")
+
+--     local app
+--     app = luna.new_web_app({
+--         name = "web socket test",
+--         host = "*",
+--         port = 12345,
+
+--         debug = true,
+--         no_errors = true,
+
+--         protocols = {
+--             default = function(ws)
+--                 local ip, port = ws:getpeername()
+--                 print("New client ip: "..ip .. " port: "..port)
+--                 ws.on_close = function ()
+--                     print("ws "..tostring(ws) .. " on_close.")
+--                 end
+--                 inc_clients[ws] = 0
+--                 while true do
+--                     local message, opcode = ws:receive()
+--                     if not message then
+--                         ws:close()
+--                         inc_clients[ws] = nil
+--                         return
+--                     end
+--                     if opcode == app.opcodes.TEXT then
+--                         if message:match('reset') then
+--                             inc_clients[ws] = 0
+--                         end
+--                         ws:send(tostring(inc_clients[ws]))
+--                     end
+--                 end
+--             end,
+--         }
+--     })
+-- end
+
+-- local last_werserv_update = 0
+-- function love.update(dt)
+--     last_werserv_update = last_werserv_update + dt
+--     if last_werserv_update >= 0.1 then
+--         last_werserv_update = 0
+--         for ws, number in pairs(inc_clients) do
+--             ws:send(tostring(number))
+--             inc_clients[ws] = number + 1
+--         end
+--     end
+
+--     luna.update(dt)
+-- end
+-------------------
+-- end ------------
+-------------------

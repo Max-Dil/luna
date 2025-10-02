@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local req = require("luna.core.requests")
+local req = require("luna.core.default.requests")
 
 local router = {}
 

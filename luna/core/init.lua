@@ -22,16 +22,32 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local app = require("luna.core.app")
-
 local luna = {}
+local result = { luna, {} }
 
-luna.new_app = function (config)
-    return app.new_app(config)
+do
+    local app = require("luna.core.default.app")
+    luna.new_app = function(config)
+        return app.new_app(config)
+    end
+
+    luna.remove_app = function(app_data_or_name)
+        app.remove(app_data_or_name)
+    end
+    result[2].app_update = app.update
 end
 
-luna.remove_app = function (app_data)
-    app.remove(app_data)
+if not _G["python"] then
+    local web_app = require("luna.core.web.web_app")
+    luna.new_web_app = function(config)
+        return web_app.new_app(config)
+    end
+
+    luna.remove_web_app = function(app_data_or_name)
+        web_app.remove(app_data_or_name)
+    end
+
+    result[2].web_app_update = web_app.update
 end
 
-return {luna, {app_update = app.update}}
+return result

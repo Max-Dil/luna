@@ -22,6 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
+local string_gsub = string.gsub
+local math_random = math.random
+local math_ceil = math.ceil
+local tostring = tostring
+local tonumber = tonumber
+local string_format = string.format
+local table_insert = table.insert
+local table_remove = table.remove
 local function create()
     local max_message_size = nil
     local connections = {}
@@ -35,9 +43,9 @@ local function create()
 
     local function uuid()
         local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-        return string.gsub(template, '[xy]', function(c)
-            local v = (c == 'x') and math.random(0, 15) or math.random(8, 11)
-            return string.format('%x', v)
+        return string_gsub(template, '[xy]', function(c)
+            local v = (c == 'x') and math_random(0, 15) or math_random(8, 11)
+            return string_format('%x', v)
         end)
     end
 
@@ -45,7 +53,7 @@ local function create()
         message = tostring(message)
         local message_id = uuid()
         local message_bytes = #message
-        local total_fragments = math.ceil(message_bytes / max_fragment_size)
+        local total_fragments = math_ceil(message_bytes / max_fragment_size)
 
         if message_status[message_id] then return end
 
@@ -63,7 +71,7 @@ local function create()
         for i = 1, total_fragments do
             local start = (i - 1) * max_fragment_size + 1
             local fragment_data = message:sub(start, start + max_fragment_size - 1)
-            local packet = string.format("MSG:%s:%d:%d:%s", message_id, i, total_fragments, fragment_data)
+            local packet = string_format("MSG:%s:%d:%d:%s", message_id, i, total_fragments, fragment_data)
 
             local fragment_info = {
                 packet = packet,
@@ -72,7 +80,7 @@ local function create()
             }
 
             status.fragments[i] = fragment_info
-            table.insert(status.fragments_to_send, fragment_info)
+            table_insert(status.fragments_to_send, fragment_info)
         end
 
         message_status[message_id] = status
@@ -105,7 +113,7 @@ local function create()
                 total_frags = tonumber(total_frags)
 
                 if message_id and frag_num and total_frags and fragment then
-                    socket:sendto(string.format("ACK:%s:%d", message_id, frag_num), ip, port)
+                    socket:sendto(string_format("ACK:%s:%d", message_id, frag_num), ip, port)
 
                     local client_key = ip .. ":" .. port
                     fragment_buffer[client_key] = fragment_buffer[client_key] or {}
@@ -131,10 +139,10 @@ local function create()
                         if msg_buffer.received_count == msg_buffer.total_fragments then
                             local parts = {}
                             for i = 1, msg_buffer.total_fragments do
-                                table.insert(parts, msg_buffer.fragments[i] or "")
+                                table_insert(parts, msg_buffer.fragments[i] or "")
                             end
                             local complete_message = table.concat(parts)
-                            table.insert(completed_messages, { message = complete_message, ip = ip, port = port })
+                            table_insert(completed_messages, { message = complete_message, ip = ip, port = port })
                             fragment_buffer[client_key][message_id] = nil
                         end
                     end
@@ -157,7 +165,7 @@ local function create()
                 local bytes_sent, err = socket:sendto(fragment_info.packet, status.ip, status.port)
 
                 if bytes_sent then
-                    table.remove(status.fragments_to_send, 1)
+                    table_remove(status.fragments_to_send, 1)
                     packets_sent_this_tick = packets_sent_this_tick + 1
                     status.time_since_sent = 0
                 else
@@ -188,7 +196,7 @@ local function create()
                                 end
                             end
                             if not already_in_queue then
-                                table.insert(status.fragments_to_send, frag_info)
+                                table_insert(status.fragments_to_send, frag_info)
                             end
                         end
                     end
