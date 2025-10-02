@@ -728,6 +728,45 @@ __lupack__["webserv.server_sync"] = function()
     local tinsert = table.insert
     local ssl
 
+    local function process_sockets(read_sockets, write_sockets, batch_size, timeout)
+        timeout = timeout or 0
+        local readable, writable = {}, {}
+
+        for i = 1, #read_sockets, batch_size do
+            local batch = {}
+            for j = i, math.min(i + batch_size - 1, #read_sockets) do
+                table.insert(batch, read_sockets[j])
+            end
+
+            local r, _, err = socket.select(batch, nil, timeout)
+            if err and err ~= "timeout" then
+                return nil, nil, err
+            end
+
+            for _, sock in ipairs(r or {}) do
+                table.insert(readable, sock)
+            end
+        end
+
+        for i = 1, #write_sockets, batch_size do
+            local batch = {}
+            for j = i, math.min(i + batch_size - 1, #write_sockets) do
+                table.insert(batch, write_sockets[j])
+            end
+
+            local _, w, err = socket.select(nil, batch, timeout)
+            if err and err ~= "timeout" then
+                return nil, nil, err
+            end
+
+            for _, sock in ipairs(w or {}) do
+                table.insert(writable, sock)
+            end
+        end
+
+        return readable, writable
+    end
+
     local client = function(sock, protocol, clients)
         local self = {}
 
@@ -805,7 +844,7 @@ __lupack__["webserv.server_sync"] = function()
         end
         listener:settimeout(0)
         pcall(function()
-            listener:listen(128)
+            listener:listen(1024)
         end)
 
         local clients = {}
@@ -837,7 +876,7 @@ __lupack__["webserv.server_sync"] = function()
                     end
                 end
             end
-            local readable, writable, select_err = socket.select(read_socks, write_socks, 0)
+            local readable, writable, select_err = process_sockets(read_socks, write_socks, 60, 0)
             if select_err == "timeout" then
                 return
             end

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Timer</title>
+    <title>Timer Test Clients</title>
     <style type="text/css">
         .title {
             font-size: 18pt;
@@ -11,53 +11,145 @@
             text-align: center;
             color: #000000;
         }
-        .content {
-            vertical-align: top;
-            text-align: center;
-            background: #fffff0;
-            padding: 12px;
-            border-radius: 10px;
+        .client-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px;
         }
-        .explain {
-            vertical-align: middle;
-            text-align: center;
-            background: #f0f0c0;
-            padding: 12px;
-            border-radius: 10px;
-            color: #404000;
+        .client {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            width: 200px;
+            background: #f9f9f9;
+        }
+        .status {
+            padding: 5px;
+            border-radius: 3px;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        .connected {
+            background: #40ff40;
+        }
+        .disconnected {
+            background: #ff4040;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            margin: 2px;
+            padding: 5px 10px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div class="title">Timer</div>
-    <div class="content">
-        <input type="button" id="offset" value="Reset counter" onclick="reset();">
-        <div id="number"></div>
-        <div id="wsdi_statustd" class="explain">
-            <div id="wsdi_status">Not initialized</div>
-        </div>
+    <div class="title">Timer Test Clients</div>
+    
+    <div class="controls">
+        <button onclick="createClients(5)">Создать 5 клиентов</button>
+        <button onclick="createClients(10)">Создать 10 клиентов</button>
+        <button onclick="closeAllClients()">Закрыть все соединения</button>
+        <button onclick="resetAllClients()">Сбросить все таймеры</button>
+        <button onclick="clearAllClients()">Удалить всех клиентов</button>
     </div>
+    
+    <div id="client-container" class="client-container"></div>
 
     <script>
-        var socket = new WebSocket('ws://localhost:12345');
+        const clients = [];
+        const clientContainer = document.getElementById('client-container');
 
-        socket.onopen = function() {
-            document.getElementById("wsdi_statustd").style.backgroundColor = "#40ff40";
-            document.getElementById("wsdi_status").textContent = " websocket connection opened ";
-        };
+        function createClient(id) {
+            const clientDiv = document.createElement('div');
+            clientDiv.className = 'client';
+            clientDiv.innerHTML = `
+                <div><strong>Клиент ${id}</strong></div>
+                <div class="status disconnected" id="status-${id}">Отключен</div>
+                <div id="number-${id}">-</div>
+                <div class="controls">
+                    <button onclick="resetClient(${id})">Сбросить</button>
+                    <button onclick="closeClient(${id})">Закрыть</button>
+                </div>
+            `;
 
-        socket.onmessage = function(msg) {
-            document.getElementById("number").textContent = msg.data;
-        };
+            clientContainer.appendChild(clientDiv);
 
-        socket.onclose = function() {
-            document.getElementById("wsdi_statustd").style.backgroundColor = "#ff4040";
-            document.getElementById("wsdi_status").textContent = " websocket connection CLOSED ";
-        };
+            const socket = new WebSocket('ws://localhost:12345');
+            
+            socket.onopen = function() {
+                document.getElementById(`status-${id}`).className = 'status connected';
+                document.getElementById(`status-${id}`).textContent = 'Подключен';
+            };
 
-        function reset() {
-            socket.send("reset\n");
+            socket.onmessage = function(msg) {
+                document.getElementById(`number-${id}`).textContent = msg.data;
+            };
+
+            socket.onclose = function() {
+                document.getElementById(`status-${id}`).className = 'status disconnected';
+                document.getElementById(`status-${id}`).textContent = 'Отключен';
+            };
+
+            socket.onerror = function(error) {
+                console.error(`Клиент ${id} ошибка:`, error);
+            };
+
+            clients.push({ id, socket, element: clientDiv });
+            return id;
         }
+
+        function createClients(count) {
+            for (let i = 0; i < count; i++) {
+                const id = clients.length + 1;
+                createClient(id);
+            }
+        }
+
+        function resetClient(id) {
+            const client = clients.find(c => c.id === id);
+            if (client && client.socket.readyState === WebSocket.OPEN) {
+                client.socket.send("reset\n");
+            }
+        }
+
+        function closeClient(id) {
+            const client = clients.find(c => c.id === id);
+            if (client) {
+                client.socket.close();
+            }
+        }
+
+        function closeAllClients() {
+            clients.forEach(client => {
+                if (client.socket.readyState === WebSocket.OPEN) {
+                    client.socket.close();
+                }
+            });
+        }
+
+        function resetAllClients() {
+            clients.forEach(client => {
+                if (client.socket.readyState === WebSocket.OPEN) {
+                    client.socket.send("reset\n");
+                }
+            });
+        }
+
+        function clearAllClients() {
+            clients.forEach(client => {
+                client.socket.close();
+            });
+            clients.length = 0;
+            clientContainer.innerHTML = '';
+        }
+
+        window.onload = function() {
+            createClients(3);
+        };
     </script>
 </body>
 </html>
