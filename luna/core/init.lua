@@ -25,7 +25,7 @@ SOFTWARE.
 local luna = {}
 local result = { luna, {} }
 
-do
+local s, e = pcall(function()
     local app = require("luna.core.default.app")
     luna.new_app = function(config)
         return app.new_app(config)
@@ -35,19 +35,27 @@ do
         app.remove(app_data_or_name)
     end
     result[2].app_update = app.update
+end)
+if not s then
+    print("Luna error init default apps: " .. e)
 end
 
-if not _G["python"] then
-    local web_app = require("luna.core.web.web_app")
-    luna.new_web_app = function(config)
-        return web_app.new_app(config)
-    end
+s, e = pcall(function()
+    if not _G["python"] then
+        local web_app = require("luna.core.web.web_app")
+        luna.new_web_app = function(config)
+            return web_app.new_app(config)
+        end
 
-    luna.remove_web_app = function(app_data_or_name)
-        web_app.remove(app_data_or_name)
-    end
+        luna.remove_web_app = function(app_data_or_name)
+            web_app.remove(app_data_or_name)
+        end
 
-    result[2].web_app_update = web_app.update
+        result[2].web_app_update = web_app.update
+    end
+end)
+if not s then
+    print("Luna error init web apps: " .. e)
 end
 
 return result
