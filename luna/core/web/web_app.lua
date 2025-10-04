@@ -28,9 +28,9 @@ local function handle_error(app_data, message, err_level)
     if not app_data.no_errors then
         if app_data.error_handler then
             app_data.error_handler(message)
-        else
-            error(message, err_level or 2)
         end
+    else
+        error(message, err_level or 2)
     end
 end
 
@@ -51,7 +51,7 @@ boolean no_errors
 
 tbl protocols
 ]]
-web_app.new_app = function (config)
+web_app.new_app = function(config)
     local app_data
     app_data = {
         name = config.name or "unknown name",
@@ -96,19 +96,23 @@ web_app.new_app = function (config)
         if app_data.debug then
             print("Web-App '" .. app_data.name .. "' started on " .. app_data.host .. ":" .. app_data.port)
         end
+        if apps[app_data.name] then
+            handle_error(app_data, "An application with that name already exists.", 2)
+            return
+        end
         apps[app_data.name] = app_data
     end
 
     return app_data
 end
 
-web_app.update = function (dt)
+web_app.update = function(dt)
     for name, app_data in pairs(apps) do
         app_data.server:update()
     end
 end
 
-web_app.remove = function (app_data_or_name)
+web_app.remove = function(app_data_or_name)
     if type(app_data_or_name) == "string" then
         app_data_or_name = apps[app_data_or_name]
         if not app_data_or_name then
@@ -123,6 +127,12 @@ web_app.remove = function (app_data_or_name)
         print("Web-App '" .. app_data_or_name.name .. "' close.")
     end
     app_data_or_name.server:close()
+end
+
+web_app.close = function()
+    for name, app_data in pairs(apps) do
+        web_app.remove(app_data)
+    end
 end
 
 return web_app

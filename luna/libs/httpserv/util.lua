@@ -22,36 +22,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local core = require("luna.core.init")
+local util = {}
 
-local luna = {}
-
-for key, value in pairs(core[1]) do
-    luna[key] = value
+function util.urlDecode(str)
+    return string.gsub(str, "%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
 end
 
-luna.update = function (dt)
-    if core[2].app_update then
-        core[2].app_update(dt)
+function util.parseQueryString(query)
+    local params = {}
+    if not query or query == "" then return params end
+
+    for key, value in string.gmatch(query, "([^&=]+)=([^&=]*)") do
+        key = util.urlDecode(key)
+        value = util.urlDecode(value)
+        params[key] = value
     end
-    if core[2].web_app_update then
-        core[2].web_app_update(dt)
-    end
-    if core[2].http_app_update then
-        core[2].http_app_update()
-    end
+
+    return params
 end
 
-luna.close = function ()
-    if core[2].app_close then
-        print(pcall(core[2].app_close))
-    end
-    if core[2].web_app_close then
-        print(pcall(core[2].web_app_close))
-    end
-    if core[2].http_app_update then
-        print(pcall(core[2].http_app_close))
-    end
+function util.trim(str)
+    return string.match(str, "^%s*(.-)%s*$") or str
 end
 
-return luna
+function util.getFileExtension(filename)
+    return filename:match("^.+(%..+)$")
+end
+
+function util.fileExists(path)
+    local file = io.open(path, "r")
+    if file then
+        file:close()
+        return true
+    end
+    return false
+end
+
+return util

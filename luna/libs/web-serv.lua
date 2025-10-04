@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local __lupack__ = {}
+local __lupack__ = __lupack__ or {}
 local __orig_require__ = require
 local require = function(path)
     if __lupack__[path] then

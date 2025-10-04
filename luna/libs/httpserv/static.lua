@@ -22,36 +22,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local core = require("luna.core.init")
+local util = require("luna.libs.httpserv.util")
+local constants = require("luna.libs.httpserv.constants")
 
-local luna = {}
+local static = {}
 
-for key, value in pairs(core[1]) do
-    luna[key] = value
+function static.server(directory)
+    return function(req, res, next)
+        if req.method ~= "GET" then
+            return next()
+        end
+
+        local safePath = req.path:gsub("%.%./", ""):gsub("//", "/")
+        if safePath == "/" then
+            safePath = "/index.html"
+        end
+
+        local filePath = directory .. safePath
+
+        if util.fileExists(filePath) then
+            local file = io.open(filePath, "rb")
+            if file then
+                local content = file:read("*a")
+                file:close()
+
+                local ext = util.getFileExtension(filePath)
+                local mimeType = constants.MIME_TYPES[ext and ext:sub(2)] or "application/octet-stream"
+
+                res:setHeader("Content-Type", mimeType)
+                res:status(200):send(content)
+                return
+            end
+        end
+
+        next()
+    end
 end
 
-luna.update = function (dt)
-    if core[2].app_update then
-        core[2].app_update(dt)
-    end
-    if core[2].web_app_update then
-        core[2].web_app_update(dt)
-    end
-    if core[2].http_app_update then
-        core[2].http_app_update()
-    end
-end
-
-luna.close = function ()
-    if core[2].app_close then
-        print(pcall(core[2].app_close))
-    end
-    if core[2].web_app_close then
-        print(pcall(core[2].web_app_close))
-    end
-    if core[2].http_app_update then
-        print(pcall(core[2].http_app_close))
-    end
-end
-
-return luna
+return static

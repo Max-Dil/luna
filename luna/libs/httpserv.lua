@@ -22,36 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local core = require("luna.core.init")
+local httpserv = {
+    server = require("luna.libs.httpserv.server"),
+    constants = require("luna.libs.httpserv.constants"),
+    util = require("luna.libs.httpserv.util"),
+    static = require("luna.libs.httpserv.static")
+}
 
-local luna = {}
-
-for key, value in pairs(core[1]) do
-    luna[key] = value
-end
-
-luna.update = function (dt)
-    if core[2].app_update then
-        core[2].app_update(dt)
-    end
-    if core[2].web_app_update then
-        core[2].web_app_update(dt)
-    end
-    if core[2].http_app_update then
-        core[2].http_app_update()
-    end
-end
-
-luna.close = function ()
-    if core[2].app_close then
-        print(pcall(core[2].app_close))
-    end
-    if core[2].web_app_close then
-        print(pcall(core[2].web_app_close))
-    end
-    if core[2].http_app_update then
-        print(pcall(core[2].http_app_close))
-    end
-end
-
-return luna
+return httpserv

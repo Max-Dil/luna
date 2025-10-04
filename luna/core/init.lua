@@ -35,6 +35,7 @@ local s, e = pcall(function()
         app.remove(app_data_or_name)
     end
     result[2].app_update = app.update
+    result[2].app_close = app.close
 end)
 if not s then
     print("Luna error init default apps: " .. e)
@@ -52,10 +53,30 @@ s, e = pcall(function()
         end
 
         result[2].web_app_update = web_app.update
+        result[2].web_app_close = web_app.close
     end
 end)
 if not s then
     print("Luna error init web apps: " .. e)
+end
+
+s, e = pcall(function()
+    if not _G["python"] then
+        local http_app = require("luna.core.http.http_app")
+        luna.new_http_app = function(config)
+            return http_app.new_app(config)
+        end
+
+        luna.remove_http_app = function(app_data_or_name)
+            http_app.remove(app_data_or_name)
+        end
+
+        result[2].http_app_update = http_app.update
+        result[2].http_app_close = http_app.close
+    end
+end)
+if not s then
+    print("Luna error init http apps: " .. e)
 end
 
 return result

@@ -35,9 +35,9 @@ local function handle_error(app_data, message, err_level)
     if not app_data.no_errors then
         if app_data.error_handler then
             app_data.error_handler(message)
-        else
-            error(message, err_level or 2)
         end
+    else
+        error(message, err_level or 2)
     end
 end
 
@@ -105,6 +105,7 @@ app.new_app = function(config)
 
         new_client = config.new_client,
         close_client = config.close_client,
+        timeout_client = config.timeout_client,
 
         request_listener = config.request_listener,
 
@@ -159,6 +160,10 @@ app.new_app = function(config)
         if app_data.debug then
             print("App '" .. app_data.name .. "' started on " .. app_data.host .. ":" .. app_data.port)
         end
+        if apps[app_data.name] then
+            handle_error(app_data, "An application with that name already exists.", 2)
+            return
+        end
         apps[app_data.name] = app_data
     end
 
@@ -193,6 +198,12 @@ app.remove = function(app_data)
 
     print("Server '" .. name .. "' stopped")
     return true
+end
+
+app.close = function ()
+    for name, app_data in pairs(apps) do
+        app.remove(app_data)
+    end
 end
 
 local function validate_value(value, expected_types)
@@ -401,22 +412,22 @@ app.update = function(dt)
                             if client.shared_secret and client.nonce then
                                 local success, decrypted = decrypt_message(client, params)
                                 if success and decrypted then
-                                        client.auth_token = nil
-                                        client.token = decrypted
+                                    client.auth_token = nil
+                                    client.token = decrypted
 
-                                        local ok, send_err = pcall(function()
-                                            client:__send(json.encode({
-                                                __luna = true,
-                                                request = "connect",
-                                                response = true,
-                                                id = "connect",
-                                                time = 0,
-                                                __noawait = true,
-                                            }))
-                                        end)
-                                        if not ok then
-                                            handle_error(m, "Error sending token connect: " .. send_err)
-                                        end
+                                    local ok, send_err = pcall(function()
+                                        client:__send(json.encode({
+                                            __luna = true,
+                                            request = "connect",
+                                            response = true,
+                                            id = "connect",
+                                            time = 0,
+                                            __noawait = true,
+                                        }))
+                                    end)
+                                    if not ok then
+                                        handle_error(m, "Error sending token connect: " .. send_err)
+                                    end
                                 end
                             end
                         end
@@ -470,11 +481,18 @@ app.update = function(dt)
 
         for client_key, client in pairs(m.clients) do
             if currentTime - client.lastActive > m.disconnect_time then
-                if m.debug then
-                    print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                        ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                if m.timeout_client then
+                    local r = m.timeout_client(client, currentTime - client.lastActive, m.disconnect_time)
+                    if r or r == nil then
+                        if m.debug then
+                            print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                                ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                        end
+                        m.clients[client_key]:close()
+                    else
+                        client.lastActive = currentTime
+                    end
                 end
-                m.clients[client_key]:close()
             end
         end
     end

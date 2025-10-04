@@ -22,36 +22,57 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local core = require("luna.core.init")
+local middleware = {}
 
-local luna = {}
+local Middleware = {}
+Middleware.__index = Middleware
 
-for key, value in pairs(core[1]) do
-    luna[key] = value
+function Middleware:new()
+    local obj = {
+        stack = {}
+    }
+    setmetatable(obj, self)
+    return obj
 end
 
-luna.update = function (dt)
-    if core[2].app_update then
-        core[2].app_update(dt)
-    end
-    if core[2].web_app_update then
-        core[2].web_app_update(dt)
-    end
-    if core[2].http_app_update then
-        core[2].http_app_update()
-    end
+function Middleware:use(fn)
+    table.insert(self.stack, fn)
 end
 
-luna.close = function ()
-    if core[2].app_close then
-        print(pcall(core[2].app_close))
+function Middleware:run(req, res)
+    local index = 1
+
+    local function next()
+        local middlewareFn = self.stack[index]
+        if not middlewareFn then
+            return true
+        end
+
+        index = index + 1
+
+        local called = false
+        local function nextWrapper()
+            if not called then
+                called = true
+                next()
+            end
+        end
+
+        local success, result = pcall(middlewareFn, req, res, nextWrapper)
+
+        if not success then
+            print("Middleware error: " .. result)
+            return false
+        end
+
+        return true
     end
-    if core[2].web_app_close then
-        print(pcall(core[2].web_app_close))
-    end
-    if core[2].http_app_update then
-        print(pcall(core[2].http_app_close))
-    end
+
+    return next()
 end
 
-return luna
+function middleware.create()
+    return Middleware:new()
+end
+
+return middleware
