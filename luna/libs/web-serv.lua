@@ -767,15 +767,31 @@ __lupack__["webserv.server_sync"] = function()
         return readable, writable
     end
 
-    local client = function(sock, protocol, clients)
+    local client = function(sock, raw_sock, protocol, clients)
         local self = {}
 
         self.state = 'OPEN'
         self.is_server = true
         self.sock = sock
+        self.raw_sock = raw_sock or sock
 
         self.getpeername = function(self)
-            return self.sock:getpeername()
+            local ip, port, err
+            if self.raw_sock and self.raw_sock.getpeername then
+                ip, port, err = self.raw_sock:getpeername()
+                if ip and port then
+                    return ip, port
+                end
+            end
+
+            if self.sock and self.sock.getpeername and self.sock ~= self.raw_sock then
+                ip, port, err = self.sock:getpeername()
+                if ip and port then
+                    return ip, port
+                end
+            end
+
+            return "unknown", 0
         end
 
         self.sock_send = function(self, data)
@@ -785,7 +801,7 @@ __lupack__["webserv.server_sync"] = function()
                 if sent then
                     index = index + sent
                 else
-                    if err == "timeout" then
+                    if err == "timeout" or err == "wantwrite" then
                         index = last + 1
                     else
                         return nil, err
@@ -801,7 +817,7 @@ __lupack__["webserv.server_sync"] = function()
             if s then
                 return s
             end
-            if err == "timeout" then
+            if err == "timeout" or err == "wantread" then
                 coroutine.yield("wantread")
                 return self:sock_receive(pattern, p)
             end
@@ -810,8 +826,16 @@ __lupack__["webserv.server_sync"] = function()
 
         self.sock_close = function(self)
             clients[protocol][self] = nil
-            self.sock:shutdown()
+            if self.sock.shutdown then
+                self.sock:shutdown()
+            end
             self.sock:close()
+            if self.raw_sock and self.raw_sock ~= self.sock then
+                if self.raw_sock.shutdown then
+                    self.raw_sock:shutdown()
+                end
+                self.raw_sock:close()
+            end
         end
 
         self = sync.extend(self)
@@ -831,20 +855,14 @@ __lupack__["webserv.server_sync"] = function()
         opts.protocols = opts.protocols or {}
         assert(opts and (opts.protocols or opts.protocols.default))
         local on_error = opts.on_error or function(s) print(s) end
-        local listener, err = socket.bind(opts.host or '*', opts.port or 80)
+
+        local raw_listener, err = socket.bind(opts.host or '*', opts.port or 80)
         if err then
             error(err)
         end
-        if opts.ssl then
-            if not ssl then
-                ssl = require("ssl")
-            end
-            local ctx = ssl.newcontext(opts.ssl)
-            listener = ssl.wrap(listener, ctx)
-        end
-        listener:settimeout(0)
+        raw_listener:settimeout(0)
         pcall(function()
-            listener:listen(1024)
+            raw_listener:listen(1024)
         end)
 
         local clients = {}
@@ -858,13 +876,23 @@ __lupack__["webserv.server_sync"] = function()
         clients[true] = {}
         local pendings = {}
 
+        local ssl_ctx
+        if opts.ssl then
+            if not ssl then
+                ssl = require("ssl")
+            end
+            ssl_ctx = ssl.newcontext(opts.ssl)
+        end
+
         local self = {}
         self.update = function()
-            local read_socks = { listener }
+            local read_socks = { raw_listener }
             local write_socks = {}
+
             for _, p in ipairs(pendings) do
                 tinsert(read_socks, p.sock)
             end
+
             for protocol_index, clts in pairs(clients) do
                 for cl in pairs(clts) do
                     if cl.co and coroutine.status(cl.co) ~= "dead" then
@@ -876,18 +904,47 @@ __lupack__["webserv.server_sync"] = function()
                     end
                 end
             end
+
             local readable, writable, select_err = process_sockets(read_socks, write_socks, 60, 0)
             if select_err == "timeout" then
                 return
             end
+
             for _, skt in ipairs(readable or {}) do
-                if skt == listener then
-                    local newsock, accept_err = listener:accept()
+                if skt == raw_listener then
+                    local newsock, accept_err = raw_listener:accept()
                     if newsock then
                         newsock:settimeout(0)
                         newsock:setoption('tcp-nodelay', true)
-                        local pending = { sock = newsock, buffer = "", request = {} }
-                        tinsert(pendings, pending)
+
+                        if ssl_ctx then
+                            local ssl_sock, ssl_err = ssl.wrap(newsock, ssl_ctx)
+                            if not ssl_sock then
+                                newsock:close()
+                                if on_error then
+                                    on_error("SSL wrap failed: " .. tostring(ssl_err))
+                                end
+                            else
+                                ssl_sock:settimeout(0)
+                                local pending = {
+                                    sock = ssl_sock,
+                                    raw_sock = newsock,
+                                    buffer = "",
+                                    request = {},
+                                    ssl_handshake_done = false
+                                }
+                                tinsert(pendings, pending)
+                            end
+                        else
+                            local pending = {
+                                sock = newsock,
+                                raw_sock = newsock,
+                                buffer = "",
+                                request = {},
+                                ssl_handshake_done = true
+                            }
+                            tinsert(pendings, pending)
+                        end
                     elseif accept_err ~= "timeout" then
                         if on_error then
                             on_error(accept_err)
@@ -899,89 +956,117 @@ __lupack__["webserv.server_sync"] = function()
                         local p = pendings[i]
                         if p.sock == skt then
                             handled = true
-                            local line, r_err, partial = p.sock:receive('*l', p.buffer)
-                            if line then
-                                p.buffer = ""
-                                tinsert(p.request, line)
-                                if line == '' then
-                                    local upgrade_request = tconcat(p.request, '\r\n')
-                                    local response, protocol = handshake.accept_upgrade(upgrade_request, protocols)
-                                    if not response then
-                                        p.sock:send(protocol)
-                                        p.sock:close()
-                                        table.remove(pendings, i)
-                                        if on_error then
-                                            on_error('invalid request')
-                                        end
-                                        break
+
+                            if ssl_ctx and not p.ssl_handshake_done then
+                                local success, handshake_err = p.sock:dohandshake()
+                                if success then
+                                    p.ssl_handshake_done = true
+                                elseif handshake_err == "wantread" or handshake_err == "wantwrite" then
+                                    break
+                                else
+                                    p.sock:close()
+                                    p.raw_sock:close()
+                                    table.remove(pendings, i)
+                                    if on_error then
+                                        on_error('SSL handshake failed: ' .. tostring(handshake_err))
                                     end
-                                    local resp_data = response
-                                    local resp_index = 1
-                                    while resp_index <= #resp_data do
-                                        local sent, s_err, s_last = p.sock:send(resp_data, resp_index)
-                                        if sent then
-                                            resp_index = resp_index + sent
-                                        else
-                                            if s_err == "timeout" then
-                                                resp_index = s_last + 1
+                                    break
+                                end
+                            end
+
+                            if not ssl_ctx or p.ssl_handshake_done then
+                                local line, r_err, partial = p.sock:receive('*l', p.buffer)
+                                if line then
+                                    p.buffer = ""
+                                    tinsert(p.request, line)
+                                    if line == '' then
+                                        local upgrade_request = tconcat(p.request, '\r\n')
+                                        local response, protocol = handshake.accept_upgrade(upgrade_request, protocols)
+                                        if not response then
+                                            p.sock:send(protocol)
+                                            p.sock:close()
+                                            p.raw_sock:close()
+                                            table.remove(pendings, i)
+                                            if on_error then
+                                                on_error('invalid request')
+                                            end
+                                            break
+                                        end
+
+                                        local resp_data = response
+                                        local resp_index = 1
+                                        while resp_index <= #resp_data do
+                                            local sent, s_err, s_last = p.sock:send(resp_data, resp_index)
+                                            if sent then
+                                                resp_index = resp_index + sent
                                             else
-                                                p.sock:close()
-                                                table.remove(pendings, i)
-                                                if on_error then
-                                                    on_error(s_err)
+                                                if s_err == "timeout" then
+                                                    resp_index = s_last + 1
+                                                else
+                                                    p.sock:close()
+                                                    p.raw_sock:close()
+                                                    table.remove(pendings, i)
+                                                    if on_error then
+                                                        on_error(s_err)
+                                                    end
+                                                    break
                                                 end
-                                                break
                                             end
                                         end
-                                    end
-                                    local protocol_index
-                                    local handler
-                                    if protocol and opts.protocols[protocol] then
-                                        protocol_index = protocol
-                                        handler = opts.protocols[protocol]
-                                    elseif opts.protocols.default then
-                                        protocol_index = true
-                                        handler = opts.protocols.default
-                                    else
-                                        p.sock:close()
-                                        if on_error then
-                                            on_error('bad protocol')
+
+                                        local protocol_index
+                                        local handler
+                                        if protocol and opts.protocols[protocol] then
+                                            protocol_index = protocol
+                                            handler = opts.protocols[protocol]
+                                        elseif opts.protocols.default then
+                                            protocol_index = true
+                                            handler = opts.protocols.default
+                                        else
+                                            p.sock:close()
+                                            p.raw_sock:close()
+                                            if on_error then
+                                                on_error('bad protocol')
+                                            end
+                                            table.remove(pendings, i)
+                                            break
+                                        end
+
+                                        local new_client = client(p.sock, p.raw_sock, protocol_index, clients)
+                                        clients[protocol_index][new_client] = true
+                                        new_client.waiting_for = nil
+                                        new_client.co = coroutine.create(function()
+                                            handler(new_client)
+                                        end)
+                                        local ok, res = coroutine.resume(new_client.co)
+                                        if not ok then
+                                            if on_error then
+                                                on_error(res)
+                                            end
+                                            new_client:close()
+                                        elseif coroutine.status(new_client.co) == "dead" then
+                                            new_client:close()
+                                        else
+                                            new_client.waiting_for = res == "wantread" and "read" or
+                                                (res == "wantwrite" and "write" or nil)
                                         end
                                         table.remove(pendings, i)
-                                        break
                                     end
-                                    local new_client = client(p.sock, protocol_index, clients)
-                                    clients[protocol_index][new_client] = true
-                                    new_client.waiting_for = nil
-                                    new_client.co = coroutine.create(function()
-                                        handler(new_client)
-                                    end)
-                                    local ok, res = coroutine.resume(new_client.co)
-                                    if not ok then
-                                        if on_error then
-                                            on_error(res)
-                                        end
-                                        new_client:close()
-                                    elseif coroutine.status(new_client.co) == "dead" then
-                                        new_client:close()
-                                    else
-                                        new_client.waiting_for = res == "wantread" and "read" or
-                                            (res == "wantwrite" and "write" or nil)
-                                    end
+                                elseif r_err == "timeout" then
+                                    p.buffer = partial
+                                else
+                                    p.sock:close()
+                                    p.raw_sock:close()
                                     table.remove(pendings, i)
-                                end
-                            elseif r_err == "timeout" then
-                                p.buffer = partial
-                            else
-                                p.sock:close()
-                                table.remove(pendings, i)
-                                if on_error then
-                                    on_error(r_err)
+                                    if on_error then
+                                        on_error(r_err)
+                                    end
                                 end
                             end
                             break
                         end
                     end
+
                     if not handled then
                         for protocol_index, clts in pairs(clients) do
                             for cl in pairs(clts) do
@@ -1005,6 +1090,7 @@ __lupack__["webserv.server_sync"] = function()
                     end
                 end
             end
+
             for _, skt in ipairs(writable or {}) do
                 for protocol_index, clts in pairs(clients) do
                     for cl in pairs(clts) do
@@ -1026,13 +1112,17 @@ __lupack__["webserv.server_sync"] = function()
                 end
             end
         end
+
         self.close = function(_, keep_clients)
-            if listener then
-                listener:close()
-                listener = nil
+            if raw_listener then
+                raw_listener:close()
+                raw_listener = nil
             end
             for i = #pendings, 1, -1 do
                 pendings[i].sock:close()
+                if pendings[i].raw_sock ~= pendings[i].sock then
+                    pendings[i].raw_sock:close()
+                end
                 table.remove(pendings, i)
             end
             if not keep_clients then
@@ -1043,6 +1133,7 @@ __lupack__["webserv.server_sync"] = function()
                 end
             end
         end
+
         return self
     end
 
@@ -1089,7 +1180,6 @@ __lupack__["webserv.sync"] = function()
                 if opcode == frame.CLOSE then
                     if not self.is_closing then
                         local code, reason = frame.decode_close(decoded)
-                        -- echo code
                         local msg = frame.encode_close(code)
                         local encoded = frame.encode(msg, frame.CLOSE, not self.is_server)
                         local n, err = self:sock_send(encoded)
@@ -1179,6 +1269,9 @@ __lupack__["webserv.sync"] = function()
         if err then
             return nil, err, nil
         end
+
+        self.raw_sock = self.sock
+
         if protocol == 'wss' then
             if not ssl then
                 ssl = require("ssl")
@@ -1188,6 +1281,7 @@ __lupack__["webserv.sync"] = function()
         elseif protocol ~= "ws" then
             return nil, 'bad protocol'
         end
+
         local ws_protocols_tbl = { '' }
         if type(ws_protocol) == 'string' then
             ws_protocols_tbl = { ws_protocol }

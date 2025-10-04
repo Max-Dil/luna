@@ -31,7 +31,15 @@ for key, value in pairs(core[1]) do
 end
 
 lunac.update = function (dt)
-    core[2].app_update(dt)
+    if core[2].app_update then
+        core[2].app_update(dt)
+    end
+end
+
+lunac.close = function ()
+    if core[2].app_close then
+        core[2].app_close()
+    end
 end
 
 return lunac

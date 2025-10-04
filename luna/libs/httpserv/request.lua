@@ -26,7 +26,7 @@ local util = require("luna.libs.httpserv.util")
 
 local request = {}
 
-function request.parse(rawRequest, client)
+function request.parse(rawRequest, client, client_data)
     local req = {
         method = "",
         path = "",
@@ -34,6 +34,7 @@ function request.parse(rawRequest, client)
         headers = {},
         body = "",
         client = client,
+        client_data = client_data,
         raw = rawRequest
     }
 

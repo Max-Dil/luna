@@ -50,6 +50,8 @@ func error_handler(error_message)
 boolean no_errors
 
 tbl protocols
+
+tbl ssl
 ]]
 web_app.new_app = function(config)
     local app_data
@@ -58,6 +60,8 @@ web_app.new_app = function(config)
 
         host = config.host or "*",
         port = config.port or 80,
+
+        ssl = config.ssl,
 
         error_handler = config.error_handler or function(message)
             print("Error in web-app '" .. app_data.name .. "': " .. message)
@@ -83,9 +87,12 @@ web_app.new_app = function(config)
             host = app_data.host,
             port = app_data.port,
 
-            on_error = handle_error,
+            on_error = function (message)
+                handle_error(app_data, message, 2)
+            end,
 
-            protocols = app_data.protocols
+            protocols = app_data.protocols,
+            ssl = app_data.ssl
         })
     end)
 

@@ -175,7 +175,7 @@ http_app.new_app = function(config)
                 local max_requests = options.max_requests or 100
                 local skip = options.skip or function(req) return false end
                 local key_generator = options.key_generator or
-                    function(req) return req.headers["x-forwarded-for"] or req.client:getpeername() or "unknown" end
+                    function(req) return req.headers["x-forwarded-for"] or req.client_data.ip:getpeername() or "unknown" end
                 local message = options.message or "Too many requests"
                 local status_code = options.status_code or 429
 
@@ -468,7 +468,7 @@ http_app.remove = function(app_data_or_name)
     if app_data_or_name.debug then
         print("Http-App '" .. app_data_or_name.name .. "' close.")
     end
-    app_data_or_name.server:close()
+    app_data_or_name.server:stop()
 end
 
 http_app.close = function()

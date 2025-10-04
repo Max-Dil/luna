@@ -22,16 +22,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local app = require("lunac.core.app")
-
 local core = {}
+local result = {core, {}}
 
-core.connect_to_app = function (config)
-    return app.connect(config)
+local s, e = pcall(function()
+    local app = require("lunac.core.default.app")
+    core.connect_to_app = function(config)
+        return app.connect(config)
+    end
+
+    core.disconnect_to_app = function(app_reference)
+        return app.close(app_reference)
+    end
+
+    result[2].app_update = app.update
+    result[2].app_close = app.close_all
+end)
+
+if not s then
+    print("Lunac error init default apps: " .. e)
 end
 
-core.disconnect_to_app = function(app_reference)
-    return app.close(app_reference)
-end
-
-return {core, {app_update = app.update}}
+return result

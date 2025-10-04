@@ -181,27 +181,42 @@ end
 
 function Server:wrapSSL(client_socket)
     if self.protocol ~= "https" or not self.ssl_context then
-        return nil, nil
+        return nil, nil, client_socket
     end
 
     local ssl = require("ssl")
     local ssl_socket, err = ssl.wrap(client_socket, self.ssl_context)
     if not ssl_socket then
-        return nil, err
+        return nil, err, client_socket
     end
 
     ssl_socket:settimeout(0)
     local success, err = ssl_socket:dohandshake()
     if not success and err ~= "timeout" and err ~= "wantread" and err ~= "wantwrite" then
-        return nil, err
+        return nil, err, client_socket
     end
 
-    return ssl_socket, nil
+    return ssl_socket, nil, client_socket
 end
 
-function Server:createClientData(client, is_ssl)
+function Server:createClientData(client, is_ssl, raw_socket)
+    local client_ip = "unknown"
+
+    if is_ssl and raw_socket then
+        local ip, port = raw_socket:getpeername()
+        if ip then
+            client_ip = ip .. ":" .. port
+        end
+    else
+        local ip, port = client:getpeername()
+        if ip then
+            client_ip = ip .. ":" .. port
+        end
+    end
+
     local client_data = {
         socket = client,
+        raw_socket = raw_socket or client,
         buffer = "",
         request = nil,
         response = nil,
@@ -209,7 +224,7 @@ function Server:createClientData(client, is_ssl)
         is_ssl = is_ssl or false,
         connect_time = socket.gettime(),
         last_activity = socket.gettime(),
-        ip = client:getpeername() or "unknown",
+        ip = client_ip,
 
         set_timeout = function (self, timeout)
             self.timeout = timeout
@@ -279,12 +294,17 @@ function Server:update()
     if client then
         client:settimeout(0)
 
-        local ssl_client, ssl_err = self:wrapSSL(client)
+        local ssl_client, ssl_err, raw_socket = self:wrapSSL(client)
         if ssl_err then
             print("SSL handshake failed: " .. ssl_err)
             client:close()
         else
-            local client_data = self:createClientData(ssl_client or client, ssl_client ~= nil)
+            local is_ssl = ssl_client ~= nil
+            local client_data = self:createClientData(
+                ssl_client or client, 
+                is_ssl, 
+                is_ssl and raw_socket or client
+            )
             table.insert(self.clients, client_data)
         end
     end
@@ -333,7 +353,7 @@ function Server:update()
             end
 
             if client_data.buffer ~= "" and not client_data.request then
-                client_data.request, err = request.parse(client_data.buffer, client)
+                client_data.request, err = request.parse(client_data.buffer, client, client_data)
                 if client_data.request then
                     client_data.response = response.create()
                     self:processRequest(client_data.request, client_data.response, client_data)

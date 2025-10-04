@@ -697,4 +697,10 @@ app.close = function(app_data)
     apps[app_data.name] = nil
 end
 
+app.close_all = function ()
+    for name, app_data in pairs(apps) do
+        app.close(app_data)
+    end
+end
+
 return app
