@@ -1052,7 +1052,7 @@ __lupack__["webserv.server_sync"] = function()
                                         end
                                         table.remove(pendings, i)
                                     end
-                                elseif r_err == "timeout" then
+                                elseif r_err == "timeout" or r_err == "wantread" or r_err == "wantwrite" then
                                     p.buffer = partial
                                 else
                                     p.sock:close()

@@ -25,7 +25,7 @@ SOFTWARE.
 local webserv = require("luna.libs.web-serv")
 
 local function handle_error(app_data, message, err_level)
-    if not app_data.no_errors then
+    if app_data.no_errors then
         if app_data.error_handler then
             app_data.error_handler(message)
         end
