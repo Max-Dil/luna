@@ -23,7 +23,7 @@ SOFTWARE.
 ]]
 
 local core = {}
-local result = {core, {}}
+local result = { core, {} }
 
 local s, e = pcall(function()
     local app = require("lunac.core.default.app")
@@ -41,6 +41,20 @@ end)
 
 if not s then
     print("Lunac error init default apps: " .. e)
+end
+
+s, e = pcall(function()
+    if not _G["python"] then
+        local http = require("lunac.core.http.http")
+        core.http = http.http
+
+        result[2].http_update = http.update
+        result[2].http_close = http.http.close_all
+    end
+end)
+
+if not s then
+    print("Lunac error init http request: " .. e)
 end
 
 return result

@@ -34,11 +34,17 @@ lunac.update = function (dt)
     if core[2].app_update then
         core[2].app_update(dt)
     end
+    if core[2].http_update then
+        core[2].http_update()
+    end
 end
 
 lunac.close = function ()
     if core[2].app_close then
-        core[2].app_close()
+        print(pcall(core[2].app_close))
+    end
+    if core[2].http_close then
+        print(pcall(core[2].http_close))
     end
 end
 

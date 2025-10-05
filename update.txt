@@ -1,4 +1,12 @@
-04.10.2025
+6.3
+Lunac:
+Добавлены HTTP/HTTPS запросы
+lunaс.http:
+lunac.http.init(config) -- {luna = luna, lunac = lunac} luna если ваш сервер в одном и том же месте что и клиент (для fetch), lunac если вы хотите чтобы он работал паралельно при fetch
+lunac.http.noawait_fetch(url, options, callback) -- асинхронный запрос callback(result, code, headers, status).
+local result, code, headers, status = lunac.http.fetch(url, {}) -- синхронный запрос
+
+6.2:
 Lunac:
 Добавлена обработки ошибки инициализации клиента, для разделения на модули
 Новая функция lunac.close() для закрытия всех приложений
