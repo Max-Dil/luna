@@ -385,7 +385,7 @@ do -- Веб сокеты тест для index.html сайт по ссылке 
 end
 
 local ltn12 = require("ltn12")
-local lunac = require("lunac.init")
+local lunac = require("lunac")
 lunac.http.init({
     luna = luna,
 })
