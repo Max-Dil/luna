@@ -1016,6 +1016,9 @@ http_app.new_app = function(config)
         timeout_client = config.timeout_client,
         error_client = config.error_client,
 
+        STATUS_CODES = httpserv.constants.STATUS_CODES,
+        MIME_TYPES = httpserv.constants.MIME_TYPES,
+
         templates = {
             static = httpserv.static.server, -- app.use(app.templates.static("directory"))
             cors = function(options)
@@ -1429,7 +1432,6 @@ http_app.close = function()
 end
 
 return http_app
-
 end
 
 -- luna/core/init.lua
@@ -1820,7 +1822,12 @@ constants.STATUS_CODES = {
     [405] = "Method Not Allowed",
     [500] = "Internal Server Error",
     [502] = "Bad Gateway",
-    [503] = "Service Unavailable"
+    [503] = "Service Unavailable",
+    [202] = "Accepted",
+    [206] = "Partial Content",
+    [307] = "Temporary Redirect",
+    [429] = "Too Many Requests",
+    [504] = "Gateway Timeout",
 }
 
 constants.MIME_TYPES = {
@@ -1843,6 +1850,12 @@ constants.MIME_TYPES = {
     ["ico"] = "image/x-icon",
     ["bmp"] = "image/bmp",
     ["webp"] = "image/webp",
+
+    -- Sounds
+    ["mp3"] = "audio/mpeg",
+    ["mp4"] = "video/mp4",
+    ["csv"] = "text/csv",
+    ["bin"] = "application/octet-stream",
 
     -- Fonts
     ["woff"] = "font/woff",
@@ -4934,6 +4947,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ]]
 
+if not __lupack__ then _G.__lupack__ = {} end
 local __lupack__ = __lupack__ or {}
 local __orig_require__ = require
 local require = function(path)

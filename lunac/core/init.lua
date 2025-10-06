@@ -57,4 +57,25 @@ if not s then
     print("Lunac error init http request: " .. e)
 end
 
+s, e = pcall(function()
+    if not _G["python"] then
+        local web = require("lunac.core.web.web_app")
+
+        core.connect_to_web_app = function(config)
+            return web.connect(config)
+        end
+
+        core.disconnect_to_web_app = function(app_reference)
+            return web.close(app_reference)
+        end
+
+        result[2].web_update = web.update
+        result[2].web_close = web.close_all
+    end
+end)
+
+if not s then
+    print("Lunac error init web-apps: " .. e)
+end
+
 return result

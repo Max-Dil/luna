@@ -65,6 +65,9 @@ http_app.new_app = function(config)
         timeout_client = config.timeout_client,
         error_client = config.error_client,
 
+        STATUS_CODES = httpserv.constants.STATUS_CODES,
+        MIME_TYPES = httpserv.constants.MIME_TYPES,
+
         templates = {
             static = httpserv.static.server, -- app.use(app.templates.static("directory"))
             cors = function(options)

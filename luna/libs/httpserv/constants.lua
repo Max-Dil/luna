@@ -50,7 +50,12 @@ constants.STATUS_CODES = {
     [405] = "Method Not Allowed",
     [500] = "Internal Server Error",
     [502] = "Bad Gateway",
-    [503] = "Service Unavailable"
+    [503] = "Service Unavailable",
+    [202] = "Accepted",
+    [206] = "Partial Content",
+    [307] = "Temporary Redirect",
+    [429] = "Too Many Requests",
+    [504] = "Gateway Timeout",
 }
 
 constants.MIME_TYPES = {
@@ -73,6 +78,12 @@ constants.MIME_TYPES = {
     ["ico"] = "image/x-icon",
     ["bmp"] = "image/bmp",
     ["webp"] = "image/webp",
+
+    -- Sounds
+    ["mp3"] = "audio/mpeg",
+    ["mp4"] = "video/mp4",
+    ["csv"] = "text/csv",
+    ["bin"] = "application/octet-stream",
 
     -- Fonts
     ["woff"] = "font/woff",

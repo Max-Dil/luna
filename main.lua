@@ -351,11 +351,11 @@ do -- Веб сокеты тест для index.html сайт по ссылке 
     local app2
     app2 = luna.new_web_app({
         name = "web socket test",
-        host = "*",
+        host = "localhost",
         port = 12345,
 
         debug = true,
-        -- no_errors = true,
+        no_errors = true,
 
         protocols = {
             default = function(ws)
@@ -385,7 +385,7 @@ do -- Веб сокеты тест для index.html сайт по ссылке 
 end
 
 local ltn12 = require("ltn12")
-local lunac = require("lunac")
+local lunac = require("lunac.init")
 lunac.http.init({
     luna = luna,
 })
@@ -423,8 +423,33 @@ else
     print("Error sync:", sync_code)
 end
 
+local client = lunac.connect_to_web_app({
+    name = "web socket client test",
+    url = "ws://localhost:12345",
+
+    on_connect = function (self)
+        print("Connect to ws://localhost:12345")
+    end,
+
+    on_message = function (self, data, opcode)
+        print(data, opcode)
+    end,
+
+    on_close = function (self, code, reason)
+        print("Web socket close: "..code)
+    end
+})
+
+local t = 0
+
 local last_werserv_update = 0
 function love.update(dt)
+    t = t + dt
+    if t > 2 then
+        client:send("reset")
+        t = 0
+    end
+
     last_werserv_update = last_werserv_update + dt
     if last_werserv_update >= 0.1 then
         last_werserv_update = 0

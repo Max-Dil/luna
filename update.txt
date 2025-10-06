@@ -1,3 +1,39 @@
+6.5
+Улучшены HTTP сервера - добавили отладку новых кодов и mime types для звуков
+В HTTP apps добавлены новые константы - app.STATUS_CODES, app.MIME_TYPES
+
+Lunac:
+Добавлены веб сокет прлиожения (веб сокет клиент)
+lunac.connect_to_web_app(config)
+config:
+str name
+str url
+boolean debug
+func error_handler(error_message)
+boolean no_errors
+str protocol
+tbl ssl
+func on_connect(self)
+func on_message(self, message, opcode)
+func on_close(self, code, reason)
+self это сам app_data
+
+lunac.disconnect_to_web_app(app_data_or_name)
+
+API web app_data:
+app:send(data, opcode) -- отправить сообщение серверу
+app.opcodes = {
+    CLOSE = 8,
+    TEXT = 1,
+    BINARY = 2,
+    PING = 9,
+    PONG = 10,
+    CONTINUATION = 0,
+} -- встроенные опкоды
+
+6.4
+Собраны файлы luna.lua, lunac.lua
+
 6.3
 Lunac:
 Добавлены HTTP/HTTPS запросы
