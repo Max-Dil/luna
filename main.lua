@@ -183,6 +183,7 @@ end
 
 -- function love.quit()
 --     luna.close()
+--     lunac.close()
 -- end
 
 

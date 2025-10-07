@@ -22,13 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local socket = require("socket")
-local json = require("lunac.libs.json")
-local message_manager = require("lunac.libs.udp_messages")
-local security = require("lunac.libs.security")
+local socket, json, message_manager, security =
+    require("socket"),
+    require("lunac.libs.json"),
+    require("lunac.libs.udp_messages"),
+    require("lunac.libs.security")
 
-local app = {}
-local apps = {}
+local print, error, tostring, type, pairs, pcall, table, string, setmetatable =
+      print, error, tostring, type, pairs, pcall, table, string, setmetatable
+
+local app, apps = {}, {}
 
 local encrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then

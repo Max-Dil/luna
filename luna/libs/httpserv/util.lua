@@ -23,10 +23,12 @@ SOFTWARE.
 ]]
 
 local util = {}
+local string_gsub, string_char, tonumber, string_gmatch, string_match, io_open =
+    string.gsub, string.char, tonumber, string.gmatch, string.match, io.open
 
 function util.urlDecode(str)
-    return string.gsub(str, "%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
+    return string_gsub(str, "%%(%x%x)", function(hex)
+        return string_char(tonumber(hex, 16))
     end)
 end
 
@@ -34,7 +36,7 @@ function util.parseQueryString(query)
     local params = {}
     if not query or query == "" then return params end
 
-    for key, value in string.gmatch(query, "([^&=]+)=([^&=]*)") do
+    for key, value in string_gmatch(query, "([^&=]+)=([^&=]*)") do
         key = util.urlDecode(key)
         value = util.urlDecode(value)
         params[key] = value
@@ -44,7 +46,7 @@ function util.parseQueryString(query)
 end
 
 function util.trim(str)
-    return string.match(str, "^%s*(.-)%s*$") or str
+    return string_match(str, "^%s*(.-)%s*$") or str
 end
 
 function util.getFileExtension(filename)
@@ -52,7 +54,7 @@ function util.getFileExtension(filename)
 end
 
 function util.fileExists(path)
-    local file = io.open(path, "r")
+    local file = io_open(path, "r")
     if file then
         file:close()
         return true

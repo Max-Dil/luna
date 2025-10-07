@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: luna
--- Generated: 05.10.2025, 19:46:24
+-- Generated: 07.10.2025, 15:13:26
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -40,14 +40,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local socket = require("socket")
-local router = require("luna.core.default.router")
-local json = require("luna.libs.json")
-local message_manager = require("luna.libs.udp_messages")
-local security = require("luna.libs.security")
+local socket, router, json, message_manager, security =
+    require("socket"),
+    require("luna.core.default.router"),
+    require("luna.libs.json"),
+    require("luna.libs.udp_messages"),
+    require("luna.libs.security")
 
-local app = {}
-local apps = {}
+local type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string =
+    type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string
+
+local app, apps = {}, {}
 
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
@@ -251,9 +254,7 @@ app.update = function(dt)
     dt = dt or (1 / 60)
     for key, m in pairs(apps) do
         for coro, data in pairs(m.running_funs) do
-            local request_handler, request, client_data = data[1], data[2], data[3]
-            local client = client_data
-            local request_result = nil
+            local request_handler, request, client, request_result = data[1], data[2], data[3], nil
 
             local ok, ok2, result = pcall(coroutine.resume, coro, request.args, client)
             if result then
@@ -975,6 +976,9 @@ SOFTWARE.
 
 local httpserv = require("luna.libs.httpserv")
 
+local type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print =
+    type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print
+
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
         if app_data.error_handler then
@@ -985,8 +989,7 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local http_app = {}
-local apps = {}
+local http_app, apps = {}, {}
 
 --[[
 config:
@@ -1432,6 +1435,7 @@ http_app.close = function()
 end
 
 return http_app
+
 end
 
 -- luna/core/init.lua
@@ -1549,6 +1553,9 @@ SOFTWARE.
 
 local webserv = require("luna.libs.web-serv")
 
+local type, pairs, pcall, error, print =
+    type, pairs, pcall, error, print
+
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
         if app_data.error_handler then
@@ -1559,8 +1566,7 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local web_app = {}
-local apps = {}
+local web_app, apps = {}, {}
 
 --[[
 config:
@@ -2305,10 +2311,12 @@ function Middleware:new()
     return obj
 end
 
+local table_insert = table.insert
 function Middleware:use(fn)
-    table.insert(self.stack, fn)
+    table_insert(self.stack, fn)
 end
 
+local pcall = pcall
 function Middleware:run(req, res)
     local index = 1
 
@@ -2375,9 +2383,9 @@ SOFTWARE.
 ]]
 
 local util = require("luna.libs.httpserv.util")
-
 local request = {}
 
+local string_gmatch, table_insert, table_concat = string.gmatch, table.insert, table.concat
 function request.parse(rawRequest, client, client_data)
     local req = {
         method = "",
@@ -2395,8 +2403,8 @@ function request.parse(rawRequest, client, client_data)
     end
 
     local lines = {}
-    for line in string.gmatch(rawRequest, "[^\r\n]+") do
-        table.insert(lines, line)
+    for line in string_gmatch(rawRequest, "[^\r\n]+") do
+        table_insert(lines, line)
     end
 
     if #lines == 0 then return nil, "Empty request" end
@@ -2431,7 +2439,7 @@ function request.parse(rawRequest, client, client_data)
     end
 
     if i < #lines then
-        req.body = table.concat(lines, "\r\n", i + 1)
+        req.body = table_concat(lines, "\r\n", i + 1)
     end
 
     return req
@@ -2466,14 +2474,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local constants = require("luna.libs.httpserv.constants")
-local json = require("luna.libs.httpserv.json")
+local constants, json =
+    require("luna.libs.httpserv.constants"),
+    require("luna.libs.httpserv.json")
 
 local response = {}
 
 local Response = {}
 Response.__index = Response
 
+local setmetatable = setmetatable
 function Response:new()
     local obj = {
         statusCode = 200,
@@ -2497,6 +2507,8 @@ function Response:setHeader(key, value)
     return self
 end
 
+local string_format, table_insert, type, table_concat, tostring =
+    string.format, table.insert, type, table.concat, tostring
 function Response:send(data)
     if data then
         self.body = data
@@ -2516,7 +2528,7 @@ function Response:json(data)
 end
 
 function Response:build()
-    local statusLine = string.format("HTTP/1.1 %d %s",
+    local statusLine = string_format("HTTP/1.1 %d %s",
         self.statusCode,
         constants.STATUS_CODES[self.statusCode] or "Unknown")
 
@@ -2533,13 +2545,13 @@ function Response:build()
     self:setHeader("Content-Length", tostring(bodyLength))
 
     for key, value in pairs(self.headers) do
-        table.insert(headers, string.format("%s: %s", key, value))
+        table_insert(headers, string_format("%s: %s", key, value))
     end
 
-    table.insert(headers, "")
-    table.insert(headers, "")
+    table_insert(headers, "")
+    table_insert(headers, "")
 
-    local headerPart = table.concat(headers, "\r\n")
+    local headerPart = table_concat(headers, "\r\n")
 
     return headerPart .. (self.body or "")
 end
@@ -2680,12 +2692,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local socket = require("socket")
+local socket, request, response, router, middleware =
+    require("socket"),
+    require("luna.libs.httpserv.request"),
+    require("luna.libs.httpserv.response"),
+    require("luna.libs.httpserv.router"),
+    require("luna.libs.httpserv.middleware")
 
-local request = require("luna.libs.httpserv.request")
-local response = require("luna.libs.httpserv.response")
-local router = require("luna.libs.httpserv.router")
-local middleware = require("luna.libs.httpserv.middleware")
+local ipairs, pcall, error, print, table_insert, table_remove, setmetatable, tonumber =
+    ipairs, pcall, error, print, table.insert, table.remove, setmetatable, tonumber
 
 local Server = {}
 Server.__index = Server
@@ -2721,7 +2736,7 @@ end
 
 function Server:on(event, callback)
     if self.events[event] then
-        table.insert(self.events[event], callback)
+        table_insert(self.events[event], callback)
     end
     return self
 end
@@ -2963,7 +2978,7 @@ function Server:update()
                 is_ssl, 
                 is_ssl and raw_socket or client
             )
-            table.insert(self.clients, client_data)
+            table_insert(self.clients, client_data)
         end
     end
 
@@ -3048,7 +3063,7 @@ function Server:update()
         end
 
         if remove_client then
-            table.remove(self.clients, i)
+            table_remove(self.clients, i)
         else
             i = i + 1
         end
@@ -3110,7 +3125,7 @@ end
 function Server:getClientInfo()
     local info = {}
     for _, client in ipairs(self.clients) do
-        table.insert(info, {
+        table_insert(info, {
             ip = client.ip,
             connect_time = client.connect_time,
             last_activity = client.last_activity,
@@ -3161,9 +3176,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local util = require("luna.libs.httpserv.util")
-local constants = require("luna.libs.httpserv.constants")
-
+local io_open = io.open
+local util, constants =
+    require("luna.libs.httpserv.util"),
+    require("luna.libs.httpserv.constants")
 local static = {}
 
 function static.server(directory)
@@ -3180,7 +3196,7 @@ function static.server(directory)
         local filePath = directory .. safePath
 
         if util.fileExists(filePath) then
-            local file = io.open(filePath, "rb")
+            local file = io_open(filePath, "rb")
             if file then
                 local content = file:read("*a")
                 file:close()
@@ -3228,10 +3244,12 @@ SOFTWARE.
 ]]
 
 local util = {}
+local string_gsub, string_char, tonumber, string_gmatch, string_match, io_open =
+    string.gsub, string.char, tonumber, string.gmatch, string.match, io.open
 
 function util.urlDecode(str)
-    return string.gsub(str, "%%(%x%x)", function(hex)
-        return string.char(tonumber(hex, 16))
+    return string_gsub(str, "%%(%x%x)", function(hex)
+        return string_char(tonumber(hex, 16))
     end)
 end
 
@@ -3239,7 +3257,7 @@ function util.parseQueryString(query)
     local params = {}
     if not query or query == "" then return params end
 
-    for key, value in string.gmatch(query, "([^&=]+)=([^&=]*)") do
+    for key, value in string_gmatch(query, "([^&=]+)=([^&=]*)") do
         key = util.urlDecode(key)
         value = util.urlDecode(value)
         params[key] = value
@@ -3249,7 +3267,7 @@ function util.parseQueryString(query)
 end
 
 function util.trim(str)
-    return string.match(str, "^%s*(.-)%s*$") or str
+    return string_match(str, "^%s*(.-)%s*$") or str
 end
 
 function util.getFileExtension(filename)
@@ -3257,7 +3275,7 @@ function util.getFileExtension(filename)
 end
 
 function util.fileExists(path)
-    local file = io.open(path, "r")
+    local file = io_open(path, "r")
     if file then
         file:close()
         return true
@@ -4652,14 +4670,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local string_gsub = string.gsub
-local math_random = math.random
-local math_ceil = math.ceil
-local tostring = tostring
-local tonumber = tonumber
-local string_format = string.format
-local table_insert = table.insert
-local table_remove = table.remove
+local string_gsub, math_random, math_ceil, tostring, tonumber, string_format, table_insert, table_remove =
+    string.gsub, math.random, math.ceil, tostring, tonumber, string.format, table.insert, table.remove
 local function create()
     local max_message_size = nil
     local connections = {}
@@ -4964,6 +4976,7 @@ __lupack__["webserv"] = function()
 
     return {
         server = require 'webserv.server_sync',
+        client = require 'webserv.client_sync',
         CONTINUATION = frame.CONTINUATION,
         TEXT = frame.TEXT,
         BINARY = frame.BINARY,
@@ -5334,39 +5347,27 @@ __lupack__["webserv.bit"] = function()
 end
 
 __lupack__["webserv.frame"] = function()
-    local bit = require 'webserv.bit'
-    local bxor = bit.bxor
-    local bor = bit.bor
-    local ssub = string.sub
-    local sbyte = string.byte
-    local schar = string.char
-    local band = bit.band
-    local rshift = bit.rshift
-    local tinsert = table.insert
-    local tconcat = table.concat
-    local mmin = math.min
-    local mfloor = math.floor
-    local mrandom = math.random
+    local bit, tools = require 'webserv.bit', require 'webserv.tools'
+    local bxor, bor, band, rshift = bit.bxor, bit.bor, bit.band, bit.rshift
+    local ssub, sbyte, schar = string.sub, string.byte, string.char
+    local tinsert, tconcat = table.insert, table.concat
+    local mmin, mfloor, mrandom = math.min, math.floor, math.random
     local unpack = unpack or table.unpack
-    local tools = require 'webserv.tools'
-    local write_int8 = tools.write_int8
-    local write_int16 = tools.write_int16
-    local write_int32 = tools.write_int32
-    local read_int8 = tools.read_int8
-    local read_int16 = tools.read_int16
-    local read_int32 = tools.read_int32
+    local write_int8, write_int16, write_int32 = tools.write_int8, tools.write_int16, tools.write_int32
+    local read_int8, read_int16, read_int32 = tools.read_int8, tools.read_int16, tools.read_int32
 
-    local bits = function(...)
-        local n = 0
-        for _, bitn in pairs { ... } do
-            n = n + 2 ^ bitn
+    local bit_7, bit_0_3, bit_0_6
+    do
+        local bits = function(...)
+            local n = 0
+            for _, bitn in pairs { ... } do
+                n = n + 2 ^ bitn
+            end
+            return n
         end
-        return n
-    end
 
-    local bit_7 = bits(7)
-    local bit_0_3 = bits(0, 1, 2, 3)
-    local bit_0_6 = bits(0, 1, 2, 3, 4, 5, 6)
+        bit_7, bit_0_3, bit_0_6 = bits(7), bits(0, 1, 2, 3), bits(0, 1, 2, 3, 4, 5, 6)
+    end
 
     local xor_mask = function(encoded, mask, payload)
         local transformed, transformed_arr = {}, {}
@@ -5442,11 +5443,7 @@ __lupack__["webserv.frame"] = function()
         pos, payload = read_int8(encoded, pos)
         local high, low
         encoded = ssub(encoded, pos)
-        local bytes = 2
-        local fin = band(header, bit_7) > 0
-        local opcode = band(header, bit_0_3)
-        local mask = band(payload, bit_7) > 0
-        payload = band(payload, bit_0_6)
+        local bytes, fin, opcode, mask, payload = 2, band(header, bit_7) > 0, band(header, bit_0_3), band(payload, bit_7) > 0, band(payload, bit_0_6)
         if payload > 125 then
             if payload == 126 then
                 if #encoded < 2 then
@@ -5515,10 +5512,11 @@ __lupack__["webserv.frame"] = function()
     local decode_close = function(data)
         local _, code, reason
         if data then
-            if #data > 1 then
+            local len = #data
+            if len > 1 then
                 _, code = read_int16(data, 1)
             end
-            if #data > 2 then
+            if len > 2 then
                 reason = data:sub(3)
             end
         end
@@ -5543,11 +5541,13 @@ __lupack__["webserv.frame"] = function()
 end
 
 __lupack__["webserv.handshake"] = function()
-    local sha1 = require 'webserv.tools'.sha1
-    local base64 = require 'webserv.tools'.base64
-    local tinsert = table.insert
-
-    local guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    local sha1, base64, tinsert, guid, table_concat, string_format =
+        require 'webserv.tools'.sha1,
+        require 'webserv.tools'.base64,
+        table.insert,
+        "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+        table.concat,
+        string.format
 
     local sec_websocket_accept = function(sec_websocket_key)
         local a = sec_websocket_key .. guid
@@ -5582,24 +5582,24 @@ __lupack__["webserv.handshake"] = function()
     end
 
     local upgrade_request = function(req)
-        local format = string.format
+        local format = string_format
         local lines = {
             format('GET %s HTTP/1.1', req.uri or ''),
             format('Host: %s', req.host),
             'Upgrade: websocket',
             'Connection: Upgrade',
             format('Sec-WebSocket-Key: %s', req.key),
-            format('Sec-WebSocket-Protocol: %s', table.concat(req.protocols, ', ')),
+            format('Sec-WebSocket-Protocol: %s', table_concat(req.protocols, ', ')),
             'Sec-WebSocket-Version: 13',
         }
         if req.origin then
-            tinsert(lines, string.format('Origin: %s', req.origin))
+            tinsert(lines, format('Origin: %s', req.origin))
         end
         if req.port and req.port ~= 80 then
             lines[2] = format('Host: %s:%d', req.host, req.port)
         end
         tinsert(lines, '\r\n')
-        return table.concat(lines, '\r\n')
+        return table_concat(lines, '\r\n')
     end
 
     local accept_upgrade = function(request, protocols)
@@ -5629,13 +5629,13 @@ __lupack__["webserv.handshake"] = function()
             'HTTP/1.1 101 Switching Protocols',
             'Upgrade: websocket',
             'Connection: ' .. headers['connection'],
-            string.format('Sec-WebSocket-Accept: %s', sec_websocket_accept(headers['sec-websocket-key'])),
+            string_format('Sec-WebSocket-Accept: %s', sec_websocket_accept(headers['sec-websocket-key'])),
         }
         if prot then
-            tinsert(lines, string.format('Sec-WebSocket-Protocol: %s', prot))
+            tinsert(lines, string_format('Sec-WebSocket-Protocol: %s', prot))
         end
         tinsert(lines, '\r\n')
-        return table.concat(lines, '\r\n'), prot
+        return table_concat(lines, '\r\n'), prot
     end
 
     return {
@@ -5647,21 +5647,31 @@ __lupack__["webserv.handshake"] = function()
 end
 
 __lupack__["webserv.server_sync"] = function()
-    local socket = require 'socket'
-    local handshake = require 'webserv.handshake'
-    local sync = require 'webserv.sync'
-    local tconcat = table.concat
-    local tinsert = table.insert
+    local pairs, ipairs, tostring, pcall, error, assert,
+          table, math, coroutine =
+        pairs, ipairs, tostring, pcall, error, assert,
+        table, math, coroutine
+
     local ssl
+    local socket, handshake, sync,
+    tconcat, tinsert, table_remove,
+    math_min,
+    coroutine_yield, coroutine_status, coroutine_resume, coroutine_create
+    =
+        require 'socket', require 'webserv.handshake', require 'webserv.sync',
+        table.concat, table.insert, table.remove,
+        math.min,
+        coroutine.yield, coroutine.status, coroutine.resume, coroutine.create
 
     local function process_sockets(read_sockets, write_sockets, batch_size, timeout)
         timeout = timeout or 0
         local readable, writable = {}, {}
 
-        for i = 1, #read_sockets, batch_size do
+        local len_r = #read_sockets
+        for i = 1, len_r, batch_size do
             local batch = {}
-            for j = i, math.min(i + batch_size - 1, #read_sockets) do
-                table.insert(batch, read_sockets[j])
+            for j = i, math_min(i + batch_size - 1, len_r) do
+                tinsert(batch, read_sockets[j])
             end
 
             local r, _, err = socket.select(batch, nil, timeout)
@@ -5670,14 +5680,15 @@ __lupack__["webserv.server_sync"] = function()
             end
 
             for _, sock in ipairs(r or {}) do
-                table.insert(readable, sock)
+                tinsert(readable, sock)
             end
         end
 
-        for i = 1, #write_sockets, batch_size do
+        local len_w = #write_sockets
+        for i = 1, len_w, batch_size do
             local batch = {}
-            for j = i, math.min(i + batch_size - 1, #write_sockets) do
-                table.insert(batch, write_sockets[j])
+            for j = i, math_min(i + batch_size - 1, len_w) do
+                tinsert(batch, write_sockets[j])
             end
 
             local _, w, err = socket.select(nil, batch, timeout)
@@ -5686,7 +5697,7 @@ __lupack__["webserv.server_sync"] = function()
             end
 
             for _, sock in ipairs(w or {}) do
-                table.insert(writable, sock)
+                tinsert(writable, sock)
             end
         end
 
@@ -5732,7 +5743,7 @@ __lupack__["webserv.server_sync"] = function()
                     else
                         return nil, err
                     end
-                    coroutine.yield("wantwrite")
+                    coroutine_yield("wantwrite")
                 end
             end
             return #data
@@ -5744,7 +5755,7 @@ __lupack__["webserv.server_sync"] = function()
                 return s
             end
             if err == "timeout" or err == "wantread" then
-                coroutine.yield("wantread")
+                coroutine_yield("wantread")
                 return self:sock_receive(pattern, p)
             end
             return nil, err
@@ -5821,7 +5832,7 @@ __lupack__["webserv.server_sync"] = function()
 
             for protocol_index, clts in pairs(clients) do
                 for cl in pairs(clts) do
-                    if cl.co and coroutine.status(cl.co) ~= "dead" then
+                    if cl.co and coroutine_status(cl.co) ~= "dead" then
                         if cl.waiting_for == "read" then
                             tinsert(read_socks, cl.sock)
                         elseif cl.waiting_for == "write" then
@@ -5892,7 +5903,7 @@ __lupack__["webserv.server_sync"] = function()
                                 else
                                     p.sock:close()
                                     p.raw_sock:close()
-                                    table.remove(pendings, i)
+                                    table_remove(pendings, i)
                                     if on_error then
                                         on_error('SSL handshake failed: ' .. tostring(handshake_err))
                                     end
@@ -5912,7 +5923,7 @@ __lupack__["webserv.server_sync"] = function()
                                             p.sock:send(protocol)
                                             p.sock:close()
                                             p.raw_sock:close()
-                                            table.remove(pendings, i)
+                                            table_remove(pendings, i)
                                             if on_error then
                                                 on_error('invalid request')
                                             end
@@ -5931,7 +5942,7 @@ __lupack__["webserv.server_sync"] = function()
                                                 else
                                                     p.sock:close()
                                                     p.raw_sock:close()
-                                                    table.remove(pendings, i)
+                                                    table_remove(pendings, i)
                                                     if on_error then
                                                         on_error(s_err)
                                                     end
@@ -5954,36 +5965,36 @@ __lupack__["webserv.server_sync"] = function()
                                             if on_error then
                                                 on_error('bad protocol')
                                             end
-                                            table.remove(pendings, i)
+                                            table_remove(pendings, i)
                                             break
                                         end
 
                                         local new_client = client(p.sock, p.raw_sock, protocol_index, clients)
                                         clients[protocol_index][new_client] = true
                                         new_client.waiting_for = nil
-                                        new_client.co = coroutine.create(function()
+                                        new_client.co = coroutine_create(function()
                                             handler(new_client)
                                         end)
-                                        local ok, res = coroutine.resume(new_client.co)
+                                        local ok, res = coroutine_resume(new_client.co)
                                         if not ok then
                                             if on_error then
                                                 on_error(res)
                                             end
                                             new_client:close()
-                                        elseif coroutine.status(new_client.co) == "dead" then
+                                        elseif coroutine_status(new_client.co) == "dead" then
                                             new_client:close()
                                         else
                                             new_client.waiting_for = res == "wantread" and "read" or
                                                 (res == "wantwrite" and "write" or nil)
                                         end
-                                        table.remove(pendings, i)
+                                        table_remove(pendings, i)
                                     end
                                 elseif r_err == "timeout" or r_err == "wantread" or r_err == "wantwrite" then
                                     p.buffer = partial
                                 else
                                     p.sock:close()
                                     p.raw_sock:close()
-                                    table.remove(pendings, i)
+                                    table_remove(pendings, i)
                                     if on_error then
                                         on_error(r_err)
                                     end
@@ -5997,13 +6008,13 @@ __lupack__["webserv.server_sync"] = function()
                         for protocol_index, clts in pairs(clients) do
                             for cl in pairs(clts) do
                                 if cl.sock == skt then
-                                    local ok, res = coroutine.resume(cl.co)
+                                    local ok, res = coroutine_resume(cl.co)
                                     if not ok then
                                         if on_error then
                                             on_error(res)
                                         end
                                         cl:close()
-                                    elseif coroutine.status(cl.co) == "dead" then
+                                    elseif coroutine_status(cl.co) == "dead" then
                                         cl:close()
                                     else
                                         cl.waiting_for = res == "wantread" and "read" or
@@ -6021,13 +6032,13 @@ __lupack__["webserv.server_sync"] = function()
                 for protocol_index, clts in pairs(clients) do
                     for cl in pairs(clts) do
                         if cl.sock == skt then
-                            local ok, res = coroutine.resume(cl.co)
+                            local ok, res = coroutine_resume(cl.co)
                             if not ok then
                                 if on_error then
                                     on_error(res)
                                 end
                                 cl:close()
-                            elseif coroutine.status(cl.co) == "dead" then
+                            elseif coroutine_status(cl.co) == "dead" then
                                 cl:close()
                             else
                                 cl.waiting_for = res == "wantread" and "read" or (res == "wantwrite" and "write" or nil)
@@ -6049,7 +6060,7 @@ __lupack__["webserv.server_sync"] = function()
                 if pendings[i].raw_sock ~= pendings[i].sock then
                     pendings[i].raw_sock:close()
                 end
-                table.remove(pendings, i)
+                table_remove(pendings, i)
             end
             if not keep_clients then
                 for protocol, clts in pairs(clients) do
@@ -6069,12 +6080,9 @@ __lupack__["webserv.server_sync"] = function()
 end
 
 __lupack__["webserv.sync"] = function()
-    local frame = require 'webserv.frame'
-    local handshake = require 'webserv.handshake'
-    local tools = require 'webserv.tools'
-    local tinsert = table.insert
-    local tconcat = table.concat
     local ssl
+    local frame, handshake, tools = require 'webserv.frame', require 'webserv.handshake', require 'webserv.tools'
+    local tinsert, tconcat, type = table.insert, table.concat, type
 
     local receive = function(self)
         if self.state ~= 'OPEN' and not self.is_closing then
@@ -6235,7 +6243,7 @@ __lupack__["webserv.sync"] = function()
                 return nil, err, nil
             end
         until line == ''
-        local response = table.concat(resp, '\r\n')
+        local response = tconcat(resp, '\r\n')
         local headers = handshake.http_headers(response)
         local expected_accept = handshake.sec_websocket_accept(key)
         if headers['sec-websocket-accept'] ~= expected_accept then
@@ -6280,22 +6288,15 @@ end
 
 __lupack__["webserv.tools"] = function()
     local bit = require 'webserv.bit'
-    local mime = require 'mime'
-    local rol = bit.rol
-    local bxor = bit.bxor
-    local bor = bit.bor
-    local band = bit.band
-    local bnot = bit.bnot
-    local lshift = bit.lshift
-    local rshift = bit.rshift
-    local srep = string.rep
-    local schar = string.char
-    local tinsert = table.insert
-    local mrandom = math.random
+    local mime, rol, bxor, bor, band, bnot, lshift, rshift,
+    srep, schar, tinsert, mrandom, string_byte
+    =
+        require 'mime', bit.rol, bit.bxor, bit.bor, bit.band, bit.bnot, bit.lshift, bit.rshift,
+        string.rep, string.char, table.insert, math.random, string.byte
 
     local read_n_bytes = function(str, pos, n)
         pos = pos or 1
-        return pos + n, string.byte(str, pos, pos + n - 1)
+        return pos + n, string_byte(str, pos, pos + n - 1)
     end
 
     local read_int8 = function(str, pos)
@@ -6316,14 +6317,11 @@ __lupack__["webserv.tools"] = function()
             d
     end
 
-    local pack_bytes = string.char
-
+    local pack_bytes = schar
     local write_int8 = pack_bytes
-
     local write_int16 = function(v)
         return pack_bytes(rshift(v, 8), band(v, 0xFF))
     end
-
     local write_int32 = function(v)
         return pack_bytes(
             band(rshift(v, 24), 0xFF),
@@ -6336,11 +6334,7 @@ __lupack__["webserv.tools"] = function()
     math.randomseed(os.time())
 
     local sha1_wiki = function(msg)
-        local h0 = 0x67452301
-        local h1 = 0xEFCDAB89
-        local h2 = 0x98BADCFE
-        local h3 = 0x10325476
-        local h4 = 0xC3D2E1F0
+        local h0, h1, h2, h3, h4 = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0
 
         local bits = #msg * 8
         msg = msg .. schar(0x80)
@@ -6461,6 +6455,214 @@ __lupack__["webserv.tools"] = function()
         write_int8 = write_int8,
         write_int16 = write_int16,
         write_int32 = write_int32,
+    }
+end
+
+__lupack__["webserv.client_sync"] = function()
+    local socket, sync,
+    tinsert,
+    math_min,
+    coroutine_yield, coroutine_status, coroutine_resume, coroutine_create
+    =
+        require 'socket', require 'webserv.sync',
+        table.insert,
+        math.min,
+        coroutine.yield, coroutine.status, coroutine.resume, coroutine.create
+
+    local function process_sockets(read_sockets, write_sockets, batch_size, timeout)
+        timeout = timeout or 0
+        local readable, writable = {}, {}
+
+        local len_r = #read_sockets
+        for i = 1, len_r, batch_size do
+            local batch = {}
+            for j = i, math_min(i + batch_size - 1, len_r) do
+                tinsert(batch, read_sockets[j])
+            end
+
+            local r, _, err = socket.select(batch, nil, timeout)
+            if err and err ~= "timeout" then
+                return nil, nil, err
+            end
+
+            for _, sock in ipairs(r or {}) do
+                tinsert(readable, sock)
+            end
+        end
+
+        local len_w = #write_sockets
+        for i = 1, len_w, batch_size do
+            local batch = {}
+            for j = i, math_min(i + batch_size - 1, len_w) do
+                tinsert(batch, write_sockets[j])
+            end
+
+            local _, w, err = socket.select(nil, batch, timeout)
+            if err and err ~= "timeout" then
+                return nil, nil, err
+            end
+
+            for _, sock in ipairs(w or {}) do
+                tinsert(writable, sock)
+            end
+        end
+
+        return readable, writable
+    end
+
+    local client = function()
+        local self = { 
+            state = 'CLOSED',
+            co = nil,
+            waiting_for = nil
+        }
+        local sock = socket.tcp()
+        sock:settimeout(0)
+
+        self.sock = sock
+        self.raw_sock = sock
+
+        self.sock_connect = function(self, host, port)
+            local success, err = self.sock:connect(host, port)
+
+            if not success then
+                if err == "timeout" then
+                    while true do
+                        local _, writeable, select_err = socket.select(nil, {self.sock}, 0)
+                        if select_err and select_err ~= "timeout" then
+                            return nil, select_err
+                        end
+
+                        if writeable and #writeable > 0 then
+                            local check_success, check_err = self.sock:getpeername()
+                            if check_success then
+                                self.state = 'CONNECTED'
+                                return true
+                            else
+                                return nil, check_err or "connection failed"
+                            end
+                        else
+                            coroutine_yield("wantwrite")
+                        end
+                    end
+                else
+                    return nil, err
+                end
+            else
+                self.state = 'CONNECTED'
+                return true
+            end
+        end
+
+        self.sock_send = function(self, data)
+            local index = 1
+            local len = #data
+            while index <= len do
+                local sent, err, last = self.sock:send(data, index)
+                if sent then
+                    index = index + sent
+                else
+                    if err == "timeout" then
+                        if last then
+                            index = last
+                        end
+                        coroutine_yield("wantwrite")
+                    else
+                        return nil, err
+                    end
+                end
+            end
+            return len
+        end
+
+        self.sock_receive = function(self, pattern, prefix)
+            local s, err, partial = self.sock:receive(pattern, prefix or "")
+            if s then
+                return s
+            end
+            if err == "timeout" then
+                coroutine_yield("wantread")
+                return self:sock_receive(pattern, partial)
+            end
+            return nil, err
+        end
+
+        self.sock_close = function(self)
+            self.state = 'CLOSED'
+            if self.sock.shutdown then
+                self.sock:shutdown()
+            end
+            self.sock:close()
+        end
+
+        self.update = function(self)
+            if not self.co or coroutine_status(self.co) == "dead" then
+                return
+            end
+
+            local read_socks = {}
+            local write_socks = {}
+
+            if self.waiting_for == "read" then
+                tinsert(read_socks, self.sock)
+            elseif self.waiting_for == "write" then
+                tinsert(write_socks, self.sock)
+            end
+
+            local readable, writable, select_err = process_sockets(read_socks, write_socks, 60, 0)
+            if select_err == "timeout" then
+                return
+            end
+
+            local should_resume = false
+            if self.waiting_for == "read" and #(readable or {}) > 0 then
+                should_resume = true
+            elseif self.waiting_for == "write" and #(writable or {}) > 0 then
+                should_resume = true
+            end
+
+            if should_resume then
+                local ok, res = coroutine_resume(self.co)
+                if not ok then
+                    if self.on_error then
+                        self:on_error(res)
+                    end
+                    self:close()
+                elseif coroutine_status(self.co) == "dead" then
+                    self:close()
+                else
+                    self.waiting_for = res == "wantread" and "read" or 
+                                      (res == "wantwrite" and "write" or nil)
+                end
+            end
+        end
+
+        self.start = function(self, handler)
+            if self.co then
+                error("Client already started")
+            end
+            self.co = coroutine_create(function()
+                handler(self)
+            end)
+            local ok, res = coroutine_resume(self.co)
+            if not ok then
+                if self.on_error then
+                    self:on_error(res)
+                end
+                self:close()
+            elseif coroutine_status(self.co) == "dead" then
+                self:close()
+            else
+                self.waiting_for = res == "wantread" and "read" or
+                                  (res == "wantwrite" and "write" or nil)
+            end
+        end
+
+        return sync.extend(self)
+    end
+
+    return {
+        new = client
     }
 end
 

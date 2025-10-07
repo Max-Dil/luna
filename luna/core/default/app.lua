@@ -22,14 +22,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local socket = require("socket")
-local router = require("luna.core.default.router")
-local json = require("luna.libs.json")
-local message_manager = require("luna.libs.udp_messages")
-local security = require("luna.libs.security")
+local socket, router, json, message_manager, security =
+    require("socket"),
+    require("luna.core.default.router"),
+    require("luna.libs.json"),
+    require("luna.libs.udp_messages"),
+    require("luna.libs.security")
 
-local app = {}
-local apps = {}
+local type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string =
+    type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string
+
+local app, apps = {}, {}
 
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
@@ -233,9 +236,7 @@ app.update = function(dt)
     dt = dt or (1 / 60)
     for key, m in pairs(apps) do
         for coro, data in pairs(m.running_funs) do
-            local request_handler, request, client_data = data[1], data[2], data[3]
-            local client = client_data
-            local request_result = nil
+            local request_handler, request, client, request_result = data[1], data[2], data[3], nil
 
             local ok, ok2, result = pcall(coroutine.resume, coro, request.args, client)
             if result then

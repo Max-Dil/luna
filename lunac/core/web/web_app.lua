@@ -34,8 +34,7 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local apps = {}
-local web_app = {}
+local apps, web_app = {}, {}
 
 --[[
 config:

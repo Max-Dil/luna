@@ -22,14 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local constants = require("luna.libs.httpserv.constants")
-local json = require("luna.libs.httpserv.json")
+local constants, json =
+    require("luna.libs.httpserv.constants"),
+    require("luna.libs.httpserv.json")
 
 local response = {}
 
 local Response = {}
 Response.__index = Response
 
+local setmetatable = setmetatable
 function Response:new()
     local obj = {
         statusCode = 200,
@@ -53,6 +55,8 @@ function Response:setHeader(key, value)
     return self
 end
 
+local string_format, table_insert, type, table_concat, tostring =
+    string.format, table.insert, type, table.concat, tostring
 function Response:send(data)
     if data then
         self.body = data
@@ -72,7 +76,7 @@ function Response:json(data)
 end
 
 function Response:build()
-    local statusLine = string.format("HTTP/1.1 %d %s",
+    local statusLine = string_format("HTTP/1.1 %d %s",
         self.statusCode,
         constants.STATUS_CODES[self.statusCode] or "Unknown")
 
@@ -89,13 +93,13 @@ function Response:build()
     self:setHeader("Content-Length", tostring(bodyLength))
 
     for key, value in pairs(self.headers) do
-        table.insert(headers, string.format("%s: %s", key, value))
+        table_insert(headers, string_format("%s: %s", key, value))
     end
 
-    table.insert(headers, "")
-    table.insert(headers, "")
+    table_insert(headers, "")
+    table_insert(headers, "")
 
-    local headerPart = table.concat(headers, "\r\n")
+    local headerPart = table_concat(headers, "\r\n")
 
     return headerPart .. (self.body or "")
 end

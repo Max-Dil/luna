@@ -23,9 +23,9 @@ SOFTWARE.
 ]]
 
 local util = require("luna.libs.httpserv.util")
-
 local request = {}
 
+local string_gmatch, table_insert, table_concat = string.gmatch, table.insert, table.concat
 function request.parse(rawRequest, client, client_data)
     local req = {
         method = "",
@@ -43,8 +43,8 @@ function request.parse(rawRequest, client, client_data)
     end
 
     local lines = {}
-    for line in string.gmatch(rawRequest, "[^\r\n]+") do
-        table.insert(lines, line)
+    for line in string_gmatch(rawRequest, "[^\r\n]+") do
+        table_insert(lines, line)
     end
 
     if #lines == 0 then return nil, "Empty request" end
@@ -79,7 +79,7 @@ function request.parse(rawRequest, client, client_data)
     end
 
     if i < #lines then
-        req.body = table.concat(lines, "\r\n", i + 1)
+        req.body = table_concat(lines, "\r\n", i + 1)
     end
 
     return req

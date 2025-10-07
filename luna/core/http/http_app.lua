@@ -24,6 +24,9 @@ SOFTWARE.
 
 local httpserv = require("luna.libs.httpserv")
 
+local type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print =
+    type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print
+
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
         if app_data.error_handler then
@@ -34,8 +37,7 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local http_app = {}
-local apps = {}
+local http_app, apps = {}, {}
 
 --[[
 config:

@@ -22,14 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local string_gsub = string.gsub
-local math_random = math.random
-local math_ceil = math.ceil
-local tostring = tostring
-local tonumber = tonumber
-local string_format = string.format
-local table_insert = table.insert
-local table_remove = table.remove
+local string_gsub, math_random, math_ceil, tostring, tonumber, string_format, table_insert, table_remove =
+    string.gsub, math.random, math.ceil, tostring, tonumber, string.format, table.insert, table.remove
 local function create()
     local max_message_size = nil
     local connections = {}

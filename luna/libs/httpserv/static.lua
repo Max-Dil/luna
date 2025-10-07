@@ -22,9 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local util = require("luna.libs.httpserv.util")
-local constants = require("luna.libs.httpserv.constants")
-
+local io_open = io.open
+local util, constants =
+    require("luna.libs.httpserv.util"),
+    require("luna.libs.httpserv.constants")
 local static = {}
 
 function static.server(directory)
@@ -41,7 +42,7 @@ function static.server(directory)
         local filePath = directory .. safePath
 
         if util.fileExists(filePath) then
-            local file = io.open(filePath, "rb")
+            local file = io_open(filePath, "rb")
             if file then
                 local content = file:read("*a")
                 file:close()

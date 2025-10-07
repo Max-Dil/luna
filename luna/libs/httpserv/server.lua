@@ -22,12 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local socket = require("socket")
+local socket, request, response, router, middleware =
+    require("socket"),
+    require("luna.libs.httpserv.request"),
+    require("luna.libs.httpserv.response"),
+    require("luna.libs.httpserv.router"),
+    require("luna.libs.httpserv.middleware")
 
-local request = require("luna.libs.httpserv.request")
-local response = require("luna.libs.httpserv.response")
-local router = require("luna.libs.httpserv.router")
-local middleware = require("luna.libs.httpserv.middleware")
+local ipairs, pcall, error, print, table_insert, table_remove, setmetatable, tonumber =
+    ipairs, pcall, error, print, table.insert, table.remove, setmetatable, tonumber
 
 local Server = {}
 Server.__index = Server
@@ -63,7 +66,7 @@ end
 
 function Server:on(event, callback)
     if self.events[event] then
-        table.insert(self.events[event], callback)
+        table_insert(self.events[event], callback)
     end
     return self
 end
@@ -305,7 +308,7 @@ function Server:update()
                 is_ssl, 
                 is_ssl and raw_socket or client
             )
-            table.insert(self.clients, client_data)
+            table_insert(self.clients, client_data)
         end
     end
 
@@ -390,7 +393,7 @@ function Server:update()
         end
 
         if remove_client then
-            table.remove(self.clients, i)
+            table_remove(self.clients, i)
         else
             i = i + 1
         end
@@ -452,7 +455,7 @@ end
 function Server:getClientInfo()
     local info = {}
     for _, client in ipairs(self.clients) do
-        table.insert(info, {
+        table_insert(info, {
             ip = client.ip,
             connect_time = client.connect_time,
             last_activity = client.last_activity,

@@ -35,10 +35,12 @@ function Middleware:new()
     return obj
 end
 
+local table_insert = table.insert
 function Middleware:use(fn)
-    table.insert(self.stack, fn)
+    table_insert(self.stack, fn)
 end
 
+local pcall = pcall
 function Middleware:run(req, res)
     local index = 1
 

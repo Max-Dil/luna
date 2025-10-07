@@ -24,6 +24,9 @@ SOFTWARE.
 
 local webserv = require("luna.libs.web-serv")
 
+local type, pairs, pcall, error, print =
+    type, pairs, pcall, error, print
+
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
         if app_data.error_handler then
@@ -34,8 +37,7 @@ local function handle_error(app_data, message, err_level)
     end
 end
 
-local web_app = {}
-local apps = {}
+local web_app, apps = {}, {}
 
 --[[
 config:
