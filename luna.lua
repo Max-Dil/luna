@@ -511,6 +511,12 @@ app.update = function(dt)
                     else
                         client.lastActive = currentTime
                     end
+                else
+                    if m.debug then
+                        print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                            ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                    end
+                    m.clients[client_key]:close()
                 end
             end
         end

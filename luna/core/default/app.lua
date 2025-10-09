@@ -29,8 +29,8 @@ local socket, router, json, message_manager, security =
     require("luna.libs.udp_messages"),
     require("luna.libs.security")
 
-local type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string =
-    type, pairs, pcall, error, setmetatable, tostring, tonumber, os, coroutine, table, string
+local type, pairs, pcall, error, setmetatable, tostring, tonumber, coroutine, table, string =
+    type, pairs, pcall, error, setmetatable, tostring, tonumber, coroutine, table, string
 
 local app, apps = {}, {}
 
@@ -493,6 +493,12 @@ app.update = function(dt)
                     else
                         client.lastActive = currentTime
                     end
+                else
+                    if m.debug then
+                        print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                            ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                    end
+                    m.clients[client_key]:close()
                 end
             end
         end
