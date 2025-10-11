@@ -51,6 +51,7 @@ SOFTWARE.]]
         local matrix = {};
         matrix.__index = matrix;
 
+        local setmetatable = setmetatable;
         local new = function(n, m, init, zero, one)
             local attrs = {
                 n = n,
@@ -149,6 +150,7 @@ SOFTWARE.]]
             return c;
         end
 
+        local tostring = tostring;
         matrix.__tostring = function(self)
             local s = "";
             for i = 0, self.n - 1 do
@@ -336,15 +338,15 @@ SOFTWARE.]]
     end
 
     do
+        local string_char, math_floor, math_log, table_concat = string.char, math.floor, math.log, table.concat;
         local number_to_bytestring = function(num, n)
-            n = n or math.floor(math.log(num) / math.log(0x100) + 1);
+            n = n or math_floor(math_log(num) / math_log(0x100) + 1);
             n = n > 0 and n or 1;
-            local string_char = string.char;
             local t = {};
             for i = 1, n do
                 t[n - i + 1] = string_char((num % 0x100 ^ i - num % 0x100 ^ (i - 1)) / 0x100 ^ (i - 1));
             end
-            local s = table.concat(t);
+            local s = table_concat(t);
             s = ("\0"):rep(n - #s) .. s;
             return s, n;
         end
@@ -358,10 +360,11 @@ SOFTWARE.]]
             return num;
         end
 
+        local string_char = string.char
         local bytetable_to_bytestring = function(t)
-            local s = t[0] and string.char(t[0]) or "";
+            local s = t[0] and string_char(t[0]) or "";
             for i = 1, #t do
-                s = s .. string.char(t[i]);
+                s = s .. string_char(t[i]);
             end
             return s;
         end
@@ -411,10 +414,10 @@ SOFTWARE.]]
             LROT = Bitops.u32_lrot;
         end
 
+        local char = string.char;
         local function unpack(s, len)
             local array = {};
             local count = 0;
-            local char = string.char;
             len = len or s:len();
 
             for i = 1, len, 4 do
@@ -428,17 +431,17 @@ SOFTWARE.]]
             return array;
         end
 
+        local min, table_concat = math.min, table.concat;
         local function pack(a, len)
             local t = {};
             local array_len = #a;
             local remaining = len or (array_len * 4);
-            local min = math.min;
             for i = 1, array_len do
                 local bytes = num_to_bytes(a[i], 4);
                 local take = min(4, remaining - (i - 1) * 4);
                 t[i] = bytes:sub(1, take);
             end
-            return table.concat(t);
+            return table_concat(t);
         end
 
         local function quarter_round(s, a, b, c, d)
@@ -476,9 +479,8 @@ SOFTWARE.]]
             return state;
         end
 
+        local unpack, pack, floor, ceil, table_concat = unpack, pack, math.floor, math.ceil, table.concat;
         local encrypt = function(plain, key, nonce)
-            local unpack, pack, floor, ceil = unpack, pack, math.floor, math.ceil;
-
             key = unpack(key);
             nonce = unpack(nonce);
             local counter = 0;
@@ -515,7 +517,7 @@ SOFTWARE.]]
                 cipher_count = cipher_count + 1;
                 cipher[cipher_count] = pack(cipher_block);
             end
-            return table.concat(cipher);
+            return table_concat(cipher);
         end
 
         local decrypt = function(cipher, key, nonce)
@@ -664,13 +666,13 @@ SOFTWARE.]]
             ["/"] = 63
         }
 
+        local floor, table_concat = math.floor, table.concat;
         local encode = function(s)
             local r = s:len() % 3;
             s = r == 0 and s or s .. ("\0"):rep(3 - r);
             local b64 = {};
             local count = 0;
             local len = s:len();
-            local floor = math.floor;
             for i = 1, len, 3 do
                 local b1, b2, b3 = s:byte(i, i + 2);
                 count = count + 1;
@@ -684,15 +686,15 @@ SOFTWARE.]]
             end
             count = count + 1;
             b64[count] = (r == 0 and "" or ("="):rep(3 - r));
-            return table.concat(b64);
+            return table_concat(b64);
         end
 
+        local char, floor, table_concat = string.char, math.floor, table.concat;
         local decode = function(b64)
             local b, p = b64:gsub("=", "");
             local s = {};
             local count = 0;
             local len = b:len();
-            local char, floor = string.char, math.floor;
             for i = 1, len, 4 do
                 local b1 = dec[b:sub(i, i)];
                 local b2 = dec[b:sub(i + 1, i + 1)];
@@ -705,7 +707,7 @@ SOFTWARE.]]
                     (b3 % 0x04) * 0x40 + b4
                 );
             end
-            local result = table.concat(s);
+            local result = table_concat(s);
             result = result:sub(1, -(p + 1));
             return result;
         end
@@ -874,8 +876,9 @@ SOFTWARE.]]
             pack(out, a);
         end
 
+        local math_random = math.random
         local generate_keypair = function(rng)
-            rng = rng or function() return math.random(0, 0xFF) end;
+            rng = rng or function() return math_random(0, 0xFF) end;
             local sk, pk = {}, {};
             for i = 0, 31 do
                 sk[i] = rng();
@@ -924,26 +927,29 @@ SOFTWARE.]]
             return key;
         end
 
+        local string_char, math_random = string.char, math.random
         local function generate_nonce()
             local nonce = "";
             for i = 1, 12 do
-                nonce = nonce .. string.char(math.random(0, 255));
+                nonce = nonce .. string_char(math_random(0, 255));
             end
             return security.base64.encode(nonce);
         end
 
+        local string_gsub, math_random, string_format = string.gsub, math.random, string.format
         local function uuid()
             local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
-            return string.gsub(template, '[xy]', function(c)
-                local v = (c == 'x') and math.random(0, 15) or math.random(8, 11);
-                return string.format('%x', v);
+            return string_gsub(template, '[xy]', function(c)
+                local v = (c == 'x') and math_random(0, 15) or math_random(8, 11);
+                return string_format('%x', v);
             end)
         end
 
+        local table_insert = table.insert
         local function split(str, sep)
             local result = {};
             for part in str:gmatch("[^" .. sep .. "]+") do
-                table.insert(result, part);
+                table_insert(result, part);
             end
             return result;
         end

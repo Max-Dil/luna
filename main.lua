@@ -2,7 +2,7 @@
 --[[
 local luna, lunac
 function love.load()
-    luna = require("luna")
+    luna = require("luna.init")
 
     local app = luna.new_app({
         host = "127.0.0.1",
@@ -24,7 +24,7 @@ function love.load()
         end,
     })
 
-    lunac = require("lunac")
+    lunac = require("lunac.init")
     _G.client = lunac.connect_to_app({
         host = "127.0.0.1",
         port = 8081,
@@ -385,21 +385,16 @@ do -- Веб сокеты тест для index.html сайт по ссылке 
     })
 end
 
-local ltn12 = require("ltn12")
 local lunac = require("lunac")
 lunac.http.init({
     luna = luna,
 })
 
-local response_data = {}
-lunac.http.noawait_fetch("http://localhost:8080/api/time", {
-    sink = ltn12.sink.table(response_data)
-}, function(result, code, headers, status)
-    print("Success:", result)
+lunac.http.noawait_fetch("http://localhost:8080/api/time", {}, function(result, code, headers, status)
     print("HTTP Code:", code)
     print("Headers:", headers)
     print("Status:", status)
-    print("Data:", table.concat(response_data))
+    print("Data:", result)
 
     if result then
         print("Request completed successfully")
@@ -408,17 +403,14 @@ lunac.http.noawait_fetch("http://localhost:8080/api/time", {
     end
 end)
 
-local response_data = {}
-local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("http://localhost:8080/api/time", {
-    sink = ltn12.sink.table(response_data)
-})
+local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("http://localhost:8080/api/time")
 
 if sync_data then
     print("-------------------")
     print("Success:", true)
     print("HTTP Code:", sync_code)
     print("Status:", sync_status)
-    print("Data:", table.concat(response_data))
+    print("Data:", sync_data)
     print("-------------------")
 else
     print("Error sync:", sync_code)
@@ -475,70 +467,29 @@ end
 
 
 -- _G.love = love
--- local ltn12 = require("ltn12")
--- local lunac = require("lunac")
+-- local lunac = require("lunac.init")
 -- lunac.http.init({ lunac = lunac })
 
--- local response_data = {}
--- lunac.http.noawait_fetch("https://nesworld.ru:8089/api/time", {
---     sink = ltn12.sink.table(response_data)
--- }, function(result, code, headers, status)
---     print("Success:", result)
---     print("HTTP Code:", code)
---     print("Headers:", headers)
---     print("Status:", status)
---     print("Data:", table.concat(response_data))
-
---     if result then
---         print("Request completed successfully")
---     else
---         print("Error:", code)
---     end
--- end)
-
--- local response_data = {}
--- local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("https://nesworld.ru:8089/api/time", {
---     sink = ltn12.sink.table(response_data)
--- })
-
--- if sync_data then
---     print("-------------------")
---     print("Success:", true)
---     print("HTTP Code:", sync_code)
---     print("Status:", sync_status)
---     print("Data:", table.concat(response_data))
---     print("-------------------")
--- else
---     print("Error sync:", sync_code)
--- end
-
--- local response_data = {}
--- local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("https://www.google.com", {
---     sink = ltn12.sink.table(response_data)
--- })
+-- local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("https://www.google.com")
 
 -- if sync_data then
 --     print("HTTPS -------------------")
---     print(sync_data, sync_code, sync_headers, sync_status)
 --     print("Sync Google:")
 --     print("Success:", true)
 --     print("HTTP Code:", sync_code)
 --     print("Status:", sync_status)
---     print("Data size:", #table.concat(response_data))
+--     print("Data size:", #sync_data)
 --     print("-------------------")
 -- else
 --     print("Error google:", sync_code)
 -- end
 
--- local response_data = {}
--- lunac.http.noawait_fetch("http://www.google.com", {
---     sink = ltn12.sink.table(response_data)
--- }, function(result, code, headers, status)
+-- lunac.http.noawait_fetch("http://www.google.com", {}, function(result, code, headers, status)
 --     print("HTTP -----------")
 --     print("HTTP Code:", code)
 --     print("Headers:", headers)
 --     print("Status:", status)
---     print("Data: size", #table.concat(response_data))
+--     print("Data: size", #result)
 -- end)
 
 -- function love.update(dt)

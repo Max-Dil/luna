@@ -372,13 +372,15 @@ local function process_async_request(async_req)
             end
 
             if not code then
-                local ok, err = async_req.h:receive09body(status, async_req.nreqt.sink, async_req.nreqt.step)
+                local chunks = {}
+                local sink = ltn12.sink.table(chunks)
+                local ok, err = async_req.h:receive09body(status, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
-                async_req.result = 1
+                async_req.result = table.concat(chunks)
                 async_req.code = 200
                 async_req.state = STATE_COMPLETED
                 break
@@ -428,18 +430,34 @@ local function process_async_request(async_req)
             end
         elseif async_req.state == STATE_RECEIVING_BODY then
             if shouldreceivebody(async_req.reqt, async_req.code) then
-                local ok, err = async_req.h:receivebody(async_req.headers, async_req.nreqt.sink, async_req.nreqt.step)
+                local sink = async_req.nreqt.sink
+                local collected_data
+
+                if not sink then
+                    local chunks = {}
+                    sink = ltn12.sink.table(chunks)
+                    collected_data = chunks
+                end
+
+                local ok, err = async_req.h:receivebody(async_req.headers, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
+
+                if collected_data then
+                    async_req.result = table.concat(collected_data)
+                else
+                    async_req.result = 1
+                end
+            else
+                async_req.result = ""
             end
 
             if async_req.h then
                 async_req.h:close()
             end
-            async_req.result = 1
             async_req.state = STATE_COMPLETED
             step_done = true
         elseif async_req.state == STATE_REDIRECTING then
@@ -451,80 +469,6 @@ local function process_async_request(async_req)
 
     return async_req.state == STATE_COMPLETED or async_req.state == STATE_ERROR
 end
-
-local function tredirect(reqt, location)
-    local result, code, headers, status = _M.request {
-        url = url.absolute(reqt.url, location),
-        source = reqt.source,
-        sink = reqt.sink,
-        headers = reqt.headers,
-        proxy = reqt.proxy,
-        nredirects = (reqt.nredirects or 0) + 1,
-        create = reqt.create,
-        timeout = reqt.timeout,
-    }
-    headers = headers or {}
-    headers.location = headers.location or location
-    return result, code, headers, status
-end
-
-_M.request = socket.protect(function(reqt, body)
-    if base.type(reqt) == "string" then
-        local parsed_reqt = _M.parseRequest(reqt, body)
-        local ok, code, headers, status = _M.request(parsed_reqt)
-
-        if ok then
-            return table.concat(parsed_reqt.target), code, headers, status
-        else
-            return nil, code
-        end
-    else
-        if type(reqt.timeout) == "table" then
-            local allowed = { connect = true, send = true, receive = true }
-            for k in pairs(reqt.timeout) do
-                assert(allowed[k],
-                    "'" .. tostring(k) .. "' is not a valid timeout option. Valid: 'connect', 'send', 'receive'")
-            end
-        end
-        reqt.create = reqt.create or _M.getcreatefunc(reqt)
-
-        local nreqt = adjustrequest(reqt)
-        local h = _M.open(nreqt)
-        h:sendrequestline(nreqt.method, nreqt.uri)
-        h:sendheaders(nreqt.headers)
-
-        if nreqt.source then
-            h:sendbody(nreqt.headers, nreqt.source, nreqt.step)
-        end
-
-        local code, status = h:receivestatusline()
-
-        if not code then
-            h:receive09body(status, nreqt.sink, nreqt.step)
-            return 1, 200
-        end
-
-        local headers
-        while code == 100 do
-            h:receiveheaders()
-            code, status = h:receivestatusline()
-        end
-
-        headers = h:receiveheaders()
-
-        if shouldredirect(nreqt, code, headers) and not nreqt.source then
-            h:close()
-            return tredirect(reqt, headers.location)
-        end
-
-        if shouldreceivebody(nreqt, code) then
-            h:receivebody(headers, nreqt.sink, nreqt.step)
-        end
-
-        h:close()
-        return 1, code, headers, status
-    end
-end)
 
 _M.request_async = function(reqt, callback)
     local async_req = create_async_request(reqt, callback)
@@ -627,7 +571,6 @@ function _M.getcreatefunc(params)
                 return nil, "SSL handshake failed: " .. (handshake_err or "unknown error")
             end
 
-            -- Create proxy to handle methods
             local proxy = {
                 send = function(self, ...) return ssl_sock:send(...) end,
                 receive = function(self, ...) return ssl_sock:receive(...) end,
@@ -644,23 +587,6 @@ function _M.getcreatefunc(params)
             return nil, "SSL wrap function not available"
         end
     end
-end
-
-_M.parseRequest = function(u, b)
-    local reqt = {
-        url = u,
-        target = {},
-    }
-    reqt.sink = ltn12.sink.table(reqt.target)
-    if b then
-        reqt.source = ltn12.source.string(b)
-        reqt.headers = {
-            ["content-length"] = string.len(b),
-            ["content-type"] = "application/x-www-form-urlencoded"
-        }
-        reqt.method = "POST"
-    end
-    return reqt
 end
 
 local http = {}

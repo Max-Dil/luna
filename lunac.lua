@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: lunac
--- Generated: 07.10.2025, 15:13:45
+-- Generated: 11.10.2025, 16:31:27
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -1098,13 +1098,15 @@ local function process_async_request(async_req)
             end
 
             if not code then
-                local ok, err = async_req.h:receive09body(status, async_req.nreqt.sink, async_req.nreqt.step)
+                local chunks = {}
+                local sink = ltn12.sink.table(chunks)
+                local ok, err = async_req.h:receive09body(status, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
-                async_req.result = 1
+                async_req.result = table.concat(chunks)
                 async_req.code = 200
                 async_req.state = STATE_COMPLETED
                 break
@@ -1154,18 +1156,34 @@ local function process_async_request(async_req)
             end
         elseif async_req.state == STATE_RECEIVING_BODY then
             if shouldreceivebody(async_req.reqt, async_req.code) then
-                local ok, err = async_req.h:receivebody(async_req.headers, async_req.nreqt.sink, async_req.nreqt.step)
+                local sink = async_req.nreqt.sink
+                local collected_data
+
+                if not sink then
+                    local chunks = {}
+                    sink = ltn12.sink.table(chunks)
+                    collected_data = chunks
+                end
+
+                local ok, err = async_req.h:receivebody(async_req.headers, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
+
+                if collected_data then
+                    async_req.result = table.concat(collected_data)
+                else
+                    async_req.result = 1
+                end
+            else
+                async_req.result = ""
             end
 
             if async_req.h then
                 async_req.h:close()
             end
-            async_req.result = 1
             async_req.state = STATE_COMPLETED
             step_done = true
         elseif async_req.state == STATE_REDIRECTING then
@@ -1177,81 +1195,6 @@ local function process_async_request(async_req)
 
     return async_req.state == STATE_COMPLETED or async_req.state == STATE_ERROR
 end
-
-local function tredirect(reqt, location)
-    local result, code, headers, status = _M.request {
-        url = url.absolute(reqt.url, location),
-        source = reqt.source,
-        sink = reqt.sink,
-        headers = reqt.headers,
-        proxy = reqt.proxy,
-        nredirects = (reqt.nredirects or 0) + 1,
-        create = reqt.create,
-        timeout = reqt.timeout,
-    }
-    headers = headers or {}
-    headers.location = headers.location or location
-    return result, code, headers, status
-end
-
-_M.request = socket.protect(function(reqt, body)
-    if base.type(reqt) == "string" then
-        local parsed_reqt = _M.parseRequest(reqt, body)
-        local ok, code, headers, status = _M.request(parsed_reqt)
-
-        if ok then
-            return table.concat(parsed_reqt.target), code, headers, status
-        else
-            return nil, code
-        end
-    else
-        if type(reqt.timeout) == "table" then
-            local allowed = { connect = true, send = true, receive = true }
-            for k in pairs(reqt.timeout) do
-                assert(allowed[k],
-                    "'" .. tostring(k) .. "' is not a valid timeout option. Valid: 'connect', 'send', 'receive'")
-            end
-        end
-        reqt.create = reqt.create or _M.getcreatefunc(reqt)
-
-        local nreqt = adjustrequest(reqt)
-        local h = _M.open(nreqt)
-        h:connect(nreqt.host, nreqt.port)
-        h:sendrequestline(nreqt.method, nreqt.uri)
-        h:sendheaders(nreqt.headers)
-
-        if nreqt.source then
-            h:sendbody(nreqt.headers, nreqt.source, nreqt.step)
-        end
-
-        local code, status = h:receivestatusline()
-
-        if not code then
-            h:receive09body(status, nreqt.sink, nreqt.step)
-            return 1, 200
-        end
-
-        local headers
-        while code == 100 do
-            h:receiveheaders()
-            code, status = h:receivestatusline()
-        end
-
-        headers = h:receiveheaders()
-
-        if shouldredirect(nreqt, code, headers) and not nreqt.source then
-            h:close()
-            return tredirect(reqt, headers.location)
-        end
-
-        if shouldreceivebody(nreqt, code) then
-            h:receivebody(headers, nreqt.sink, nreqt.step)
-        end
-
-        h:close()
-        return 1, code, headers, status
-    end
-end)
 
 _M.request_async = function(reqt, callback)
     local async_req = create_async_request(reqt, callback)
@@ -1319,23 +1262,6 @@ function _M.getcreatefunc(params)
 
         return sock
     end
-end
-
-_M.parseRequest = function(u, b)
-    local reqt = {
-        url = u,
-        target = {},
-    }
-    reqt.sink = ltn12.sink.table(reqt.target)
-    if b then
-        reqt.source = ltn12.source.string(b)
-        reqt.headers = {
-            ["content-length"] = string.len(b),
-            ["content-type"] = "application/x-www-form-urlencoded"
-        }
-        reqt.method = "POST"
-    end
-    return reqt
 end
 
 local https = require("lunac.core.http.https")
@@ -1807,13 +1733,15 @@ local function process_async_request(async_req)
             end
 
             if not code then
-                local ok, err = async_req.h:receive09body(status, async_req.nreqt.sink, async_req.nreqt.step)
+                local chunks = {}
+                local sink = ltn12.sink.table(chunks)
+                local ok, err = async_req.h:receive09body(status, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
-                async_req.result = 1
+                async_req.result = table.concat(chunks)
                 async_req.code = 200
                 async_req.state = STATE_COMPLETED
                 break
@@ -1863,18 +1791,34 @@ local function process_async_request(async_req)
             end
         elseif async_req.state == STATE_RECEIVING_BODY then
             if shouldreceivebody(async_req.reqt, async_req.code) then
-                local ok, err = async_req.h:receivebody(async_req.headers, async_req.nreqt.sink, async_req.nreqt.step)
+                local sink = async_req.nreqt.sink
+                local collected_data
+
+                if not sink then
+                    local chunks = {}
+                    sink = ltn12.sink.table(chunks)
+                    collected_data = chunks
+                end
+
+                local ok, err = async_req.h:receivebody(async_req.headers, sink, async_req.nreqt.step)
                 if not ok then
                     async_req.state = STATE_ERROR
                     async_req.error = "Receive body failed: " .. (err or "unknown error")
                     break
                 end
+
+                if collected_data then
+                    async_req.result = table.concat(collected_data)
+                else
+                    async_req.result = 1
+                end
+            else
+                async_req.result = ""
             end
 
             if async_req.h then
                 async_req.h:close()
             end
-            async_req.result = 1
             async_req.state = STATE_COMPLETED
             step_done = true
         elseif async_req.state == STATE_REDIRECTING then
@@ -1886,80 +1830,6 @@ local function process_async_request(async_req)
 
     return async_req.state == STATE_COMPLETED or async_req.state == STATE_ERROR
 end
-
-local function tredirect(reqt, location)
-    local result, code, headers, status = _M.request {
-        url = url.absolute(reqt.url, location),
-        source = reqt.source,
-        sink = reqt.sink,
-        headers = reqt.headers,
-        proxy = reqt.proxy,
-        nredirects = (reqt.nredirects or 0) + 1,
-        create = reqt.create,
-        timeout = reqt.timeout,
-    }
-    headers = headers or {}
-    headers.location = headers.location or location
-    return result, code, headers, status
-end
-
-_M.request = socket.protect(function(reqt, body)
-    if base.type(reqt) == "string" then
-        local parsed_reqt = _M.parseRequest(reqt, body)
-        local ok, code, headers, status = _M.request(parsed_reqt)
-
-        if ok then
-            return table.concat(parsed_reqt.target), code, headers, status
-        else
-            return nil, code
-        end
-    else
-        if type(reqt.timeout) == "table" then
-            local allowed = { connect = true, send = true, receive = true }
-            for k in pairs(reqt.timeout) do
-                assert(allowed[k],
-                    "'" .. tostring(k) .. "' is not a valid timeout option. Valid: 'connect', 'send', 'receive'")
-            end
-        end
-        reqt.create = reqt.create or _M.getcreatefunc(reqt)
-
-        local nreqt = adjustrequest(reqt)
-        local h = _M.open(nreqt)
-        h:sendrequestline(nreqt.method, nreqt.uri)
-        h:sendheaders(nreqt.headers)
-
-        if nreqt.source then
-            h:sendbody(nreqt.headers, nreqt.source, nreqt.step)
-        end
-
-        local code, status = h:receivestatusline()
-
-        if not code then
-            h:receive09body(status, nreqt.sink, nreqt.step)
-            return 1, 200
-        end
-
-        local headers
-        while code == 100 do
-            h:receiveheaders()
-            code, status = h:receivestatusline()
-        end
-
-        headers = h:receiveheaders()
-
-        if shouldredirect(nreqt, code, headers) and not nreqt.source then
-            h:close()
-            return tredirect(reqt, headers.location)
-        end
-
-        if shouldreceivebody(nreqt, code) then
-            h:receivebody(headers, nreqt.sink, nreqt.step)
-        end
-
-        h:close()
-        return 1, code, headers, status
-    end
-end)
 
 _M.request_async = function(reqt, callback)
     local async_req = create_async_request(reqt, callback)
@@ -2062,7 +1932,6 @@ function _M.getcreatefunc(params)
                 return nil, "SSL handshake failed: " .. (handshake_err or "unknown error")
             end
 
-            -- Create proxy to handle methods
             local proxy = {
                 send = function(self, ...) return ssl_sock:send(...) end,
                 receive = function(self, ...) return ssl_sock:receive(...) end,
@@ -2079,23 +1948,6 @@ function _M.getcreatefunc(params)
             return nil, "SSL wrap function not available"
         end
     end
-end
-
-_M.parseRequest = function(u, b)
-    local reqt = {
-        url = u,
-        target = {},
-    }
-    reqt.sink = ltn12.sink.table(reqt.target)
-    if b then
-        reqt.source = ltn12.source.string(b)
-        reqt.headers = {
-            ["content-length"] = string.len(b),
-            ["content-type"] = "application/x-www-form-urlencoded"
-        }
-        reqt.method = "POST"
-    end
-    return reqt
 end
 
 local http = {}
@@ -2970,6 +2822,7 @@ SOFTWARE.]]
         local matrix = {};
         matrix.__index = matrix;
 
+        local setmetatable = setmetatable;
         local new = function(n, m, init, zero, one)
             local attrs = {
                 n = n,
@@ -3068,6 +2921,7 @@ SOFTWARE.]]
             return c;
         end
 
+        local tostring = tostring;
         matrix.__tostring = function(self)
             local s = "";
             for i = 0, self.n - 1 do
@@ -3255,15 +3109,15 @@ SOFTWARE.]]
     end
 
     do
+        local string_char, math_floor, math_log, table_concat = string.char, math.floor, math.log, table.concat;
         local number_to_bytestring = function(num, n)
-            n = n or math.floor(math.log(num) / math.log(0x100) + 1);
+            n = n or math_floor(math_log(num) / math_log(0x100) + 1);
             n = n > 0 and n or 1;
-            local string_char = string.char;
             local t = {};
             for i = 1, n do
                 t[n - i + 1] = string_char((num % 0x100 ^ i - num % 0x100 ^ (i - 1)) / 0x100 ^ (i - 1));
             end
-            local s = table.concat(t);
+            local s = table_concat(t);
             s = ("\0"):rep(n - #s) .. s;
             return s, n;
         end
@@ -3277,10 +3131,11 @@ SOFTWARE.]]
             return num;
         end
 
+        local string_char = string.char
         local bytetable_to_bytestring = function(t)
-            local s = t[0] and string.char(t[0]) or "";
+            local s = t[0] and string_char(t[0]) or "";
             for i = 1, #t do
-                s = s .. string.char(t[i]);
+                s = s .. string_char(t[i]);
             end
             return s;
         end
@@ -3330,10 +3185,10 @@ SOFTWARE.]]
             LROT = Bitops.u32_lrot;
         end
 
+        local char = string.char;
         local function unpack(s, len)
             local array = {};
             local count = 0;
-            local char = string.char;
             len = len or s:len();
 
             for i = 1, len, 4 do
@@ -3347,17 +3202,17 @@ SOFTWARE.]]
             return array;
         end
 
+        local min, table_concat = math.min, table.concat;
         local function pack(a, len)
             local t = {};
             local array_len = #a;
             local remaining = len or (array_len * 4);
-            local min = math.min;
             for i = 1, array_len do
                 local bytes = num_to_bytes(a[i], 4);
                 local take = min(4, remaining - (i - 1) * 4);
                 t[i] = bytes:sub(1, take);
             end
-            return table.concat(t);
+            return table_concat(t);
         end
 
         local function quarter_round(s, a, b, c, d)
@@ -3395,9 +3250,8 @@ SOFTWARE.]]
             return state;
         end
 
+        local unpack, pack, floor, ceil, table_concat = unpack, pack, math.floor, math.ceil, table.concat;
         local encrypt = function(plain, key, nonce)
-            local unpack, pack, floor, ceil = unpack, pack, math.floor, math.ceil;
-
             key = unpack(key);
             nonce = unpack(nonce);
             local counter = 0;
@@ -3434,7 +3288,7 @@ SOFTWARE.]]
                 cipher_count = cipher_count + 1;
                 cipher[cipher_count] = pack(cipher_block);
             end
-            return table.concat(cipher);
+            return table_concat(cipher);
         end
 
         local decrypt = function(cipher, key, nonce)
@@ -3583,13 +3437,13 @@ SOFTWARE.]]
             ["/"] = 63
         }
 
+        local floor, table_concat = math.floor, table.concat;
         local encode = function(s)
             local r = s:len() % 3;
             s = r == 0 and s or s .. ("\0"):rep(3 - r);
             local b64 = {};
             local count = 0;
             local len = s:len();
-            local floor = math.floor;
             for i = 1, len, 3 do
                 local b1, b2, b3 = s:byte(i, i + 2);
                 count = count + 1;
@@ -3603,15 +3457,15 @@ SOFTWARE.]]
             end
             count = count + 1;
             b64[count] = (r == 0 and "" or ("="):rep(3 - r));
-            return table.concat(b64);
+            return table_concat(b64);
         end
 
+        local char, floor, table_concat = string.char, math.floor, table.concat;
         local decode = function(b64)
             local b, p = b64:gsub("=", "");
             local s = {};
             local count = 0;
             local len = b:len();
-            local char, floor = string.char, math.floor;
             for i = 1, len, 4 do
                 local b1 = dec[b:sub(i, i)];
                 local b2 = dec[b:sub(i + 1, i + 1)];
@@ -3624,7 +3478,7 @@ SOFTWARE.]]
                     (b3 % 0x04) * 0x40 + b4
                 );
             end
-            local result = table.concat(s);
+            local result = table_concat(s);
             result = result:sub(1, -(p + 1));
             return result;
         end
@@ -3793,8 +3647,9 @@ SOFTWARE.]]
             pack(out, a);
         end
 
+        local math_random = math.random
         local generate_keypair = function(rng)
-            rng = rng or function() return math.random(0, 0xFF) end;
+            rng = rng or function() return math_random(0, 0xFF) end;
             local sk, pk = {}, {};
             for i = 0, 31 do
                 sk[i] = rng();
@@ -3843,26 +3698,29 @@ SOFTWARE.]]
             return key;
         end
 
+        local string_char, math_random = string.char, math.random
         local function generate_nonce()
             local nonce = "";
             for i = 1, 12 do
-                nonce = nonce .. string.char(math.random(0, 255));
+                nonce = nonce .. string_char(math_random(0, 255));
             end
             return security.base64.encode(nonce);
         end
 
+        local string_gsub, math_random, string_format = string.gsub, math.random, string.format
         local function uuid()
             local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
-            return string.gsub(template, '[xy]', function(c)
-                local v = (c == 'x') and math.random(0, 15) or math.random(8, 11);
-                return string.format('%x', v);
+            return string_gsub(template, '[xy]', function(c)
+                local v = (c == 'x') and math_random(0, 15) or math_random(8, 11);
+                return string_format('%x', v);
             end)
         end
 
+        local table_insert = table.insert
         local function split(str, sep)
             local result = {};
             for part in str:gmatch("[^" .. sep .. "]+") do
-                table.insert(result, part);
+                table_insert(result, part);
             end
             return result;
         end
