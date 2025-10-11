@@ -29,7 +29,7 @@ local socket, json, message_manager, security =
     require("lunac.libs.security")
 
 local print, error, tostring, type, pairs, pcall, table, string, setmetatable =
-      print, error, tostring, type, pairs, pcall, table, string, setmetatable
+    print, error, tostring, type, pairs, pcall, table, string, setmetatable
 
 local app, apps = {}, {}
 

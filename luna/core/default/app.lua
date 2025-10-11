@@ -121,7 +121,7 @@ app.new_app = function(config)
         get_clients = function()
             local clients = {}
             for key, value in pairs(app_data.clients) do
-                table.insert(clients, { ip = value.ip, port = value.port })
+                table.insert(clients, value)
             end
             return clients
         end,
