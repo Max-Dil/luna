@@ -22,10 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local httpserv = require("luna.libs.httpserv")
+local httpserv, socket = require("luna.libs.httpserv"), require("socket")
 
-local type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print =
-    type, pairs, ipairs, pcall, error, tostring, table, string, math, os, print
+local type, pairs, ipairs, pcall, error, tostring, print, table_concat, table_insert, 
+      math_max, math_ceil, math_random, os_time, os_date, string_format, socket_gettime,
+      json_decode, util_parseQueryString =
+    type, pairs, ipairs, pcall, error, tostring, print, table.concat, table.insert,
+    math.max, math.ceil, math.random, os.time, os.date, string.format, (socket and socket.gettime) or (function() return os.time end)(),
+    (function() local json = require("luna.libs.httpserv.json") return json.decode end)(),
+    (function() local util = require("luna.libs.httpserv.util") return util.parseQueryString end)()
 
 local function handle_error(app_data, message, err_level)
     if app_data.no_errors then
@@ -114,8 +119,8 @@ http_app.new_app = function(config)
                     end
 
                     res:setHeader("Access-Control-Allow-Origin", current_origin)
-                    res:setHeader("Access-Control-Allow-Methods", table.concat(allowed_methods, ", "))
-                    res:setHeader("Access-Control-Allow-Headers", table.concat(allowed_headers, ", "))
+                    res:setHeader("Access-Control-Allow-Methods", table_concat(allowed_methods, ", "))
+                    res:setHeader("Access-Control-Allow-Headers", table_concat(allowed_headers, ", "))
 
                     if allow_credentials and current_origin ~= "*" then
                         res:setHeader("Access-Control-Allow-Credentials", "true")
@@ -136,7 +141,7 @@ http_app.new_app = function(config)
                         if requested_headers then
                             local headers = {}
                             for header in requested_headers:gmatch("[^,]+") do
-                                table.insert(headers, trim(header))
+                                table_insert(headers, trim(header))
                             end
 
                             for _, header in ipairs(headers) do
@@ -167,8 +172,6 @@ http_app.new_app = function(config)
                 end
             end,
             rate_limited = function(options)
-                local socket = require("socket")
-
                 local function table_count(t)
                     local count = 0
                     for _ in pairs(t) do count = count + 1 end
@@ -185,10 +188,10 @@ http_app.new_app = function(config)
                 local status_code = options.status_code or 429
 
                 local requests = {}
-                local last_cleanup = os.time() * 1000
+                local last_cleanup = os_time() * 1000
                 local cleanup_interval = 60000
                 local function cleanup(force)
-                    local now = socket and socket.gettime() and socket.gettime() * 1000 or os.time() * 1000
+                    local now = socket_gettime() * 1000 or os_time() * 1000
 
                     if force or now - last_cleanup > cleanup_interval then
                         for key, data in pairs(requests) do
@@ -206,7 +209,7 @@ http_app.new_app = function(config)
                     end
 
                     local key = key_generator(req)
-                    local now = socket and socket.gettime() and socket.gettime() * 1000 or os.time() * 1000
+                    local now = socket_gettime() * 1000 or os_time() * 1000
 
                     if not requests[key] or now - requests[key].start_time > window_ms then
                         requests[key] = {
@@ -217,20 +220,20 @@ http_app.new_app = function(config)
 
                     requests[key].count = requests[key].count + 1
 
-                    local remaining = math.max(0, max_requests - requests[key].count)
-                    local reset_time = math.ceil((requests[key].start_time + window_ms) / 1000)
+                    local remaining = math_max(0, max_requests - requests[key].count)
+                    local reset_time = math_ceil((requests[key].start_time + window_ms) / 1000)
 
                     res:setHeader("X-RateLimit-Limit", tostring(max_requests))
                     res:setHeader("X-RateLimit-Remaining", tostring(remaining))
                     res:setHeader("X-RateLimit-Reset", tostring(reset_time))
 
                     if requests[key].count > max_requests then
-                        res:setHeader("Retry-After", tostring(math.ceil((reset_time - now / 1000))))
+                        res:setHeader("Retry-After", tostring(math_ceil((reset_time - now / 1000))))
                         res:status(status_code):json({ error = message })
                         return
                     end
 
-                    if math.random(100) == 1 or (next(requests) and table_count(requests) > 1000 and math.random(10) == 1) then
+                    if math_random(100) == 1 or (next(requests) and table_count(requests) > 1000 and math_random(10) == 1) then
                         cleanup(true)
                     end
 
@@ -243,14 +246,12 @@ http_app.new_app = function(config)
 
                     if req.body and req.body ~= "" then
                         if content_type:find("application/json") then
-                            local json = require("luna.libs.httpserv.json")
-                            local success, parsed = pcall(json.decode, req.body)
+                            local success, parsed = pcall(json_decode, req.body)
                             if success then
                                 req.body = parsed
                             end
                         elseif content_type:find("application/x-www-form-urlencoded") then
-                            local util = require("luna.libs.httpserv.util")
-                            req.body = util.parseQueryString(req.body)
+                            req.body = util_parseQueryString(req.body)
                         end
                     end
 
@@ -258,7 +259,6 @@ http_app.new_app = function(config)
                 end
             end,
             logger = function(options)
-                local socket = require("socket")
                 options = options or {}
                 local format = options.format or ":method :url :status :response-time ms"
                 local stream = options.stream or { write = function(msg) print(msg) end }
@@ -269,20 +269,20 @@ http_app.new_app = function(config)
                         return next()
                     end
 
-                    local start_time = socket and socket.gettime() and socket.gettime() * 1000 or os.time() * 1000
+                    local start_time = socket_gettime() * 1000 or os_time() * 1000
 
                     local original_send = res.send
                     res.send = function(self, data)
                         local result = original_send(self, data)
 
-                        local end_time = socket and socket.gettime() and socket.gettime() * 1000 or os.time() * 1000
+                        local end_time = socket_gettime() * 1000 or os_time() * 1000
                         local response_time = end_time - start_time
 
                         local log_message = format
                             :gsub(":method", req.method)
                             :gsub(":url", req.path)
                             :gsub(":status", tostring(self.statusCode))
-                            :gsub(":response-time", string.format("%.2f", response_time))
+                            :gsub(":response-time", string_format("%.2f", response_time))
                             :gsub(":remote-addr", req.client:getpeername() or "unknown")
                             :gsub(":user-agent", req.headers["user-agent"] or "-")
                             :gsub(":content-length", self.headers["Content-Length"] or "-")
@@ -369,7 +369,7 @@ http_app.new_app = function(config)
             end
             app_data.is_listen = true
             if app_data.debug then
-                print(string.format("Server listening on " .. (protocol or "http") .. "://" .. host .. ":" .. port))
+                print(string_format("Server listening on " .. (protocol or "http") .. "://" .. host .. ":" .. port))
             end
         end
         app_data.stop = function(self)
@@ -428,7 +428,7 @@ http_app.new_app = function(config)
 
         if app_data.debug then
             app:use(function(req, res, next)
-                print(string.format("[%s] %s %s", os.date("%H:%M:%S"), req.method, req.path))
+                print(string_format("[%s] %s %s", os_date("%H:%M:%S"), req.method, req.path))
                 next()
             end)
         end
