@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: luna
--- Generated: 11.10.2025, 16:30:49
+-- Generated: 14.10.2025, 10:25:53
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -105,6 +105,8 @@ func close_client
 func request_listener
 boolean debug
 int disconnect_time
+
+boolean encryption
 ]]
 app.new_app = function(config)
     local app_data
@@ -112,7 +114,11 @@ app.new_app = function(config)
         config.debug = true
     end
 
-    local server_private, server_public = security.x25519.generate_keypair()
+    config.encryption = config.encryption == nil and true or config.encryption
+    local server_private, server_public
+    if config.encryption then
+        server_private, server_public = security.x25519.generate_keypair()
+    end
 
     app_data = setmetatable({
         max_ip_connected = config.max_ip_connected or 100,
@@ -139,7 +145,7 @@ app.new_app = function(config)
         get_clients = function()
             local clients = {}
             for key, value in pairs(app_data.clients) do
-                table.insert(clients, { ip = value.ip, port = value.port })
+                table.insert(clients, value)
             end
             return clients
         end,
@@ -161,9 +167,11 @@ app.new_app = function(config)
 
         disconnect_time = config.disconnect_time or 10,
 
-        set_disconnect_time = function (new_time)
+        set_disconnect_time = function(new_time)
             app_data.disconnect_time = new_time
-        end
+        end,
+
+        encryption = config.encryption,
     }, { __index = router })
 
     local ok, err = pcall(function()
@@ -221,7 +229,7 @@ app.remove = function(app_data)
     return true
 end
 
-app.close = function ()
+app.close = function()
     for name, app_data in pairs(apps) do
         app.remove(app_data)
     end
@@ -325,35 +333,37 @@ app.update = function(dt)
                     m.clients[client_key] = client
                     client.lastActive = currentTime
 
-                    client.auth_token = security.utils.uuid()
-                    local nonce = security.base64.encode(security.utils.generate_nonce())
-                    client.nonce = security.base64.decode(nonce)
+                    if m.encryption then
+                        client.auth_token = security.utils.uuid()
+                        local nonce = security.base64.encode(security.utils.generate_nonce())
+                        client.nonce = security.base64.decode(nonce)
 
-                    client.__send = client.send
-                    client.send = function (self, data)
-                        local success, message = encrypt_message(client, data)
-                        if success then
-                            pcall(self.__send, self, message)
+                        client.__send = client.send
+                        client.send = function(self, data)
+                            local success, message = encrypt_message(client, data)
+                            if success then
+                                pcall(self.__send, self, message)
+                            end
                         end
-                    end
 
-                    local ok, send_err = pcall(function()
-                        client:__send(json.encode({
-                            __luna = true,
-                            request = "handshake",
-                            response = json.encode({
-                                pub = security.utils.key_to_string(m.server_public),
-                                token = client.auth_token,
-                                nonce = nonce
-                            }),
-                            id = "handshake",
-                            time = 0,
-                            __noawait = true,
-                        }))
-                    end)
+                        local ok, send_err = pcall(function()
+                            client:__send(json.encode({
+                                __luna = true,
+                                request = "handshake",
+                                response = json.encode({
+                                    pub = security.utils.key_to_string(m.server_public),
+                                    token = client.auth_token,
+                                    nonce = nonce
+                                }),
+                                id = "handshake",
+                                time = 0,
+                                __noawait = true,
+                            }))
+                        end)
 
-                    if not ok then
-                        handle_error(m, "Error sending handshake: " .. send_err)
+                        if not ok then
+                            handle_error(m, "Error sending handshake: " .. send_err)
+                        end
                     end
 
                     client.__close = client.close
@@ -392,7 +402,13 @@ app.update = function(dt)
                     print("Rejected connection from " ..
                         ip .. ":" .. port .. ": max connections (" .. m.max_ip_connected .. ") reached")
                     m.ip_counts[ip] = m.ip_counts[ip] - 1
-                    local success, message = encrypt_message(client, json.encode({ error = "Max connections reached", __luna = true }))
+                    local success, message
+                    if m.encryption then
+                        success, message = encrypt_message(client,
+                        json.encode({ error = "Max connections reached", __luna = true }))
+                    else
+                        success, message = true, json.encode({ error = "Max connections reached", __luna = true })
+                    end
                     if success then
                         m.socket.send_message(message, ip, port)
                     end
@@ -412,7 +428,8 @@ app.update = function(dt)
 
                             if auth_token == client.auth_token then
                                 client_pub = security.utils.string_to_key(client_pub)
-                                client.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(m.server_private, client_pub))
+                                client.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(
+                                m.server_private, client_pub))
                                 local ok, send_err = pcall(function()
                                     client:__send(json.encode({
                                         __luna = true,
@@ -452,7 +469,12 @@ app.update = function(dt)
                         end
                     end
                 else
-                    local success, err = decrypt_message(client, data)
+                    local success, err
+                    if m.encryption then
+                        success, err = decrypt_message(client, data)
+                    else
+                        success, err = true, data
+                    end
                     if success and err then
                         data = err
                         if m.debug then
@@ -491,7 +513,8 @@ app.update = function(dt)
                                 end
                             end
                         else
-                            handle_error(m, "Error sending data to client " .. client_key .. ": " .. (err or "unknown decrypt error"))
+                            handle_error(m,
+                                "Error sending data to client " .. client_key .. ": " .. (err or "unknown decrypt error"))
                         end
                     end
                 end
@@ -505,7 +528,8 @@ app.update = function(dt)
                     if r or r == nil then
                         if m.debug then
                             print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                                ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                                ":" .. client.port .. " <due to timeout>", "Time: " .. currentTime - client.lastActive,
+                                "disconnect_time: " .. m.disconnect_time, "currentTime: " .. currentTime)
                         end
                         m.clients[client_key]:close()
                     else
@@ -514,7 +538,8 @@ app.update = function(dt)
                 else
                     if m.debug then
                         print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
-                            ":" .. client.port .. " <due to timeout>", "Time: "..currentTime - client.lastActive, "disconnect_time: "..m.disconnect_time, "currentTime: "..currentTime)
+                            ":" .. client.port .. " <due to timeout>", "Time: " .. currentTime - client.lastActive,
+                            "disconnect_time: " .. m.disconnect_time, "currentTime: " .. currentTime)
                     end
                     m.clients[client_key]:close()
                 end
@@ -838,7 +863,7 @@ req.process = function(router, client_data, data)
         end
     end
 
-    if request.args.__client_token ~= client_data.token then
+    if router.app.encryption and request.args.__client_token ~= client_data.token then
         return {request = request.path, error = "Couldn't confirm the client's token", time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil}
     end
 
@@ -1652,7 +1677,10 @@ end
 
 web_app.update = function(dt)
     for name, app_data in pairs(apps) do
-        app_data.server:update()
+        local s, e = pcall(app_data.server.update, app_data.server)
+        if not s then
+            handle_error(app_data, e, 2)
+        end
     end
 end
 
@@ -1680,7 +1708,6 @@ web_app.close = function()
 end
 
 return web_app
-
 end
 
 -- luna/init.lua
@@ -3713,319 +3740,6 @@ SOFTWARE.]]
 local security = {}
 
 do
-    --[[
-MIT License
-
-Copyright (c) 2023 BernhardZat
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.]]
-
-    do
-        local matrix = {};
-        matrix.__index = matrix;
-
-        local setmetatable = setmetatable;
-        local new = function(n, m, init, zero, one)
-            local attrs = {
-                n = n,
-                m = m or n,
-                init = init or 0,
-                zero = zero or 0,
-                one = one or 1,
-                data = {},
-            };
-            return setmetatable(attrs, matrix);
-        end
-
-        local identity = function(size, zero, one)
-            zero = zero or 0;
-            one = one or 1;
-            local id = new(size, size, zero, zero, one);
-            for i = 0, size - 1 do
-                id:set(i, i, one);
-            end
-            return id;
-        end
-
-        matrix.set = function(self, i, j, v)
-            self.data[i * self.m + j] = v;
-        end
-
-        matrix.get = function(self, i, j)
-            return self.data[i * self.m + j] or self.init;
-        end
-
-        matrix.set_sub = function(self, sub, i, j)
-            for k = 0, sub.n - 1 do
-                for l = 0, sub.m - 1 do
-                    self:set(i + k, j + l, sub:get(k, l));
-                end
-            end
-        end
-
-        matrix.get_sub = function(self, i, j, n, m)
-            local sub = new(n, m);
-            for k = 0, n - 1 do
-                for l = 0, m - 1 do
-                    sub:set(k, l, self:get(i + k, j + l));
-                end
-            end
-            return sub;
-        end
-
-        matrix.set_row = function(self, row, i)
-            self:set_sub(row, i, 0);
-        end
-
-        matrix.get_row = function(self, i)
-            return self:get_sub(i, 0, 1, self.m);
-        end
-
-        matrix.set_col = function(self, column, j)
-            self:set_sub(column, 0, j);
-        end
-
-        matrix.get_col = function(self, j)
-            return self:get_sub(0, j, self.n, 1);
-        end
-
-        matrix.__add = function(a, b)
-            local c = new(a.n, a.m);
-            for i = 0, a.n - 1 do
-                for j = 0, a.m - 1 do
-                    c:set(i, j, a:get(i, j) + b:get(i, j));
-                end
-            end
-            return c;
-        end
-
-        matrix.__sub = function(a, b)
-            local c = new(a.n, a.m);
-            for i = 0, a.n - 1 do
-                for j = 0, a.m - 1 do
-                    c:set(i, j, a:get(i, j) - b:get(i, j));
-                end
-            end
-            return c;
-        end
-
-        matrix.__mul = function(a, b)
-            local c = new(a.n, b.m);
-            for i = 0, a.n - 1 do
-                for j = 0, b.m - 1 do
-                    local sum = 0;
-                    for k = 0, a.m - 1 do
-                        sum = sum + a:get(i, k) * b:get(k, j);
-                    end
-                    c:set(i, j, sum);
-                end
-            end
-            return c;
-        end
-
-        local tostring = tostring;
-        matrix.__tostring = function(self)
-            local s = "";
-            for i = 0, self.n - 1 do
-                for j = 0, self.m - 1 do
-                    s = s .. tostring(self:get(i, j)) .. " ";
-                end
-                s = s .. "\n";
-            end
-            return s;
-        end
-
-        security.matrix = {
-            new = new,
-            identity = identity,
-            set = matrix.set,
-            get = matrix.get,
-            set_sub = matrix.set_sub,
-            get_sub = matrix.get_sub,
-            set_row = matrix.set_row,
-            get_row = matrix.get_row,
-            set_col = matrix.set_col,
-            get_col = matrix.get_col,
-        };
-    end
-
-    do
-        local Matrix = security.matrix
-        local M = Matrix.new;
-
-        local u8_and_table = M(256);
-        for i = 0, 7 do
-            local m1 = u8_and_table:get_sub(0, 0, 2 ^ i, 2 ^ i);
-            local m2 = M(2 ^ i, 2 ^ i, 2 ^ i);
-            u8_and_table:set_sub(m1, 2 ^ i, 0);
-            u8_and_table:set_sub(m1, 0, 2 ^ i);
-            u8_and_table:set_sub(m1 + m2, 2 ^ i, 2 ^ i);
-        end
-
-        local u8_lsh = function(a, n)
-            return a * 2 ^ n % 0x100;
-        end
-
-        local u8_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u8_lrot = function(a, n)
-            n = n % 8;
-            return u8_lsh(a, n) + u8_rsh(a, 8 - n);
-        end
-
-        local u8_rrot = function(a, n)
-            n = n % 8;
-            return u8_rsh(a, n) + u8_lsh(a, 8 - n);
-        end
-
-        local u8_not = function(a)
-            return 0xFF - a;
-        end
-
-        local u8_and = function(a, b)
-            return u8_and_table:get(a, b);
-        end
-
-        local u8_xor = function(a, b)
-            return u8_not(u8_and(a, b)) - u8_and(u8_not(a), u8_not(b));
-        end
-
-        local u8_or = function(a, b)
-            return u8_and(a, b) + u8_xor(a, b);
-        end
-
-        local u16_lsh = function(a, n)
-            return a * 2 ^ n % 0x10000;
-        end
-
-        local u16_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u16_lrot = function(a, n)
-            n = n % 16;
-            return u16_lsh(a, n) + u16_rsh(a, 16 - n);
-        end
-
-        local u16_rrot = function(a, n)
-            n = n % 16;
-            return u16_rsh(a, n) + u16_lsh(a, 16 - n);
-        end
-
-        local u16_not = function(a)
-            return 0xFFFF - a;
-        end
-
-        local u16_and = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_and(a1, b1), u8_and(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u16_xor = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_xor(a1, b1), u8_xor(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u16_or = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_or(a1, b1), u8_or(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u32_lsh = function(a, n)
-            return a * 2 ^ n % 0x100000000;
-        end
-
-        local u32_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u32_lrot = function(a, n)
-            n = n % 32;
-            return u32_lsh(a, n) + u32_rsh(a, 32 - n);
-        end
-
-        local u32_rrot = function(a, n)
-            n = n % 32;
-            return u32_rsh(a, n) + u32_lsh(a, 32 - n);
-        end
-
-        local u32_not = function(a)
-            return 0xFFFFFFFF - a;
-        end
-
-        local u32_and = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_and(a1, b1), u16_and(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        local u32_xor = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_xor(a1, b1), u16_xor(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        local u32_or = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_or(a1, b1), u16_or(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        security.bitops = {
-            u8_lsh = u8_lsh,
-            u8_rsh = u8_rsh,
-            u8_lrot = u8_lrot,
-            u8_rrot = u8_rrot,
-            u8_not = u8_not,
-            u8_and = u8_and,
-            u8_xor = u8_xor,
-            u8_or = u8_or,
-            u16_lsh = u16_lsh,
-            u16_rsh = u16_rsh,
-            u16_lrot = u16_lrot,
-            u16_rrot = u16_rrot,
-            u16_not = u16_not,
-            u16_and = u16_and,
-            u16_xor = u16_xor,
-            u16_or = u16_or,
-            u32_lsh = u32_lsh,
-            u32_rsh = u32_rsh,
-            u32_lrot = u32_lrot,
-            u32_rrot = u32_rrot,
-            u32_not = u32_not,
-            u32_and = u32_and,
-            u32_xor = u32_xor,
-            u32_or = u32_or,
-        };
-    end
-
     do
         local string_char, math_floor, math_log, table_concat = string.char, math.floor, math.log, table.concat;
         local number_to_bytestring = function(num, n)
@@ -4049,61 +3763,65 @@ SOFTWARE.]]
             return num;
         end
 
-        local string_char = string.char
-        local bytetable_to_bytestring = function(t)
-            local s = t[0] and string_char(t[0]) or "";
-            for i = 1, #t do
-                s = s .. string_char(t[i]);
-            end
-            return s;
-        end
-
-        local bytestring_to_bytetable = function(s, zero_based)
-            local t = {};
-            local j = zero_based and 1 or 0;
-            for i = 1, s:len() do
-                t[i - j] = s:byte(i);
-            end
-            return t;
-        end
-
-        local bytetable_to_number = function(t)
-            local num = 0;
-            for i = 0, #t - (t[0] and 0 or 1) do
-                num = num + t[#t - i] * 0x100 ^ i;
-            end
-            return num;
-        end
-
         security.util = {
             number_to_bytestring = number_to_bytestring,
             bytestring_to_number = bytestring_to_number,
-            bytetable_to_bytestring = bytetable_to_bytestring,
-            bytestring_to_bytetable = bytestring_to_bytetable,
-            bytetable_to_number = bytetable_to_number,
         }
     end
 
     do
-        local Bitops = security.bitops;
-        local Util = security.util;
-
-        local XOR, LROT = Bitops.u32_xor, Bitops.u32_lrot;
-        local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
-
-        local MOD = 0x100000000;
-
-        local is_luajit = type(jit) == 'table';
-        if is_luajit then
-            local bit = require('bit');
-            XOR = bit.bxor;
-            LROT = bit.rol;
+        local has_bit32, bit32 = pcall(require, "bit32");
+        local has_bit, bit = pcall(require, "bit");
+        local u32_xor, u32_lrot;
+        if has_bit32 then
+            u32_xor = bit32.bxor;
+            u32_lrot = function(a, n)
+                return bit32.lrotate(a, n % 32);
+            end
+        elseif has_bit then
+            u32_xor = bit.bxor;
+            u32_lrot = bit.rol;
         else
-            XOR = Bitops.u32_xor;
-            LROT = Bitops.u32_lrot;
+            local and_table = {};
+            do
+                for i = 0, 255 do
+                    and_table[i] = {};
+                    for j = 0, 255 do
+                        local result = 0;
+                        local bit_val = 1;
+                        for k = 0, 7 do
+                            if (i % (2 * bit_val)) >= bit_val and (j % (2 * bit_val)) >= bit_val then
+                                result = result + bit_val;
+                            end
+                            bit_val = bit_val * 2;
+                        end
+                        and_table[i][j] = result;
+                    end
+                end
+            end
+
+            local math_floor = math.floor;
+            function u32_xor(a, b)
+                local a1, a2, b1, b2 = math_floor(a / 0x10000), a % 0x10000, math_floor(b / 0x10000), b % 0x10000;
+
+                local a161, a162, b161, b162 = math_floor(a1 / 0x100), a1 % 0x100, math_floor(b1 / 0x100), b1 % 0x100;
+                local r1 = (a161 + b161 - 2 * and_table[a161 % 0x100][b161 % 0x100]) % 0x100 * 0x100 + (a162 + b162 - 2 * and_table[a162 % 0x100][b162 % 0x100]) % 0x100;
+
+                a161, a162, b161, b162 = math_floor(a2 / 0x100), a2 % 0x100, math_floor(b2 / 0x100), b2 % 0x100;
+                local r2 = (a161 + b161 - 2 * and_table[a161 % 0x100][b161 % 0x100]) % 0x100 * 0x100 + (a162 + b162 - 2 * and_table[a162 % 0x100][b162 % 0x100]) % 0x100;
+                return r1 * 0x10000 + r2;
+            end
+
+            function u32_lrot(a, n)
+                n = n % 32;
+                return ((a * (2 ^ n)) % 0x100000000 + math_floor(a / (2 ^ (32 - n)))) % 0x100000000;
+            end
         end
 
-        local char = string.char;
+        local num_to_bytes, num_from_bytes, MOD, char, XOR, LROT =
+            security.util.number_to_bytestring, security.util.bytestring_to_number, 0x100000000, string.char, u32_xor,
+            u32_lrot
+
         local function unpack(s, len)
             local array = {};
             local count = 0;
@@ -4140,7 +3858,7 @@ SOFTWARE.]]
             s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
         end
 
-        local CONSTANTS = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
+        local CONSTANTS = { 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574 };
         local block = function(key, nonce, counter)
             local init = {
                 CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],
@@ -4654,6 +4372,7 @@ SOFTWARE.]]
 end
 
 return security
+
 end
 
 -- luna/libs/udp_messages.lua
@@ -6679,7 +6398,6 @@ __lupack__["webserv.client_sync"] = function()
 end
 
 return require("webserv")
-
 end
 
 -- Starting the main file

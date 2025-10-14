@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: lunac
--- Generated: 11.10.2025, 16:31:27
+-- Generated: 14.10.2025, 10:26:22
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -47,7 +47,7 @@ local socket, json, message_manager, security =
     require("lunac.libs.security")
 
 local print, error, tostring, type, pairs, pcall, table, string, setmetatable =
-      print, error, tostring, type, pairs, pcall, table, string, setmetatable
+    print, error, tostring, type, pairs, pcall, table, string, setmetatable
 
 local app, apps = {}, {}
 
@@ -100,150 +100,154 @@ local function try_connect(app_data)
         app_data.connected = true
         app_data.trying_to_reconnect = false
 
-        ---------------- Подключение ---------------
-        app_data.nonce = nil
-        app_data.shared_secret = nil
+        if app_data.encryption then
+            ---------------- Подключение ---------------
+            app_data.nonce = nil
+            app_data.shared_secret = nil
 
-        app_data.no_server_decrypt = true
-        local TIMEOUT = 5
-        local start_time
+            app_data.no_server_decrypt = true
+            local TIMEOUT = 5
+            local start_time
 
-        local success, err = pcall(app_data.socket.send_message, "pls connect", app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Init send failed: " .. err)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
+            local success, err = pcall(app_data.socket.send_message, "pls connect", app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Init send failed: " .. err)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
 
-        local server_pub, token, nonce
-        local error_message
-        app_data.pending_noawait_requests["handshake"] = {
-            path = "handshake",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    local success, decoded = pcall(json.decode, data)
-                    if success then
-                        if decoded.pub and decoded.token and decoded.nonce then
-                            server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
-                                decoded.nonce
+            local server_pub, token, nonce
+            local error_message
+            app_data.pending_noawait_requests["handshake"] = {
+                path = "handshake",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        local success, decoded = pcall(json.decode, data)
+                        if success then
+                            if decoded.pub and decoded.token and decoded.nonce then
+                                server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
+                                    decoded.nonce
+                            else
+                                error_message = "Error not found connect args"
+                            end
                         else
-                            error_message = "Error not found connect args"
+                            error_message = decoded
                         end
                     else
-                        error_message = decoded
+                        error_message = err
                     end
-                else
-                    error_message = err
                 end
-            end
-        }
+            }
 
-        start_time = socket.gettime()
-        while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("handshake: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        app_data.nonce = security.base64.decode(nonce)
-        app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private, server_pub))
-
-        success, err = pcall(app_data.socket.send_message,
-            "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
-            app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Client pub send failed: " .. err)
-            return false
-        end
-
-        local connect, error_message
-        app_data.pending_noawait_requests["connect"] = {
-            path = "connect",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    connect = true
-                else
-                    error_message = err
-                end
-            end
-        }
-
-        start_time = socket.gettime()
-        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("connect: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
-        client_token = client_token:match("^(.-)%z*$") or client_token
-        client_token = security.base64.encode(client_token)
-        success, err = pcall(app_data.socket.send_message,
-            "client_tok" .. client_token,
-            app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Client token send failed: " .. err)
-            return false
-        end
-
-        connect, error_message = nil, nil
-        app_data.pending_noawait_requests["connect"] = {
-            path = "connect",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    connect = true
-                else
-                    error_message = err
-                end
-            end
-        }
-
-        start_time = socket.gettime()
-        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("connect client token: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        print("Successfully new security CONNECTION")
-        app_data.no_server_decrypt = nil
-
-        app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
-        --------------------------------------------
-
-        if type(jit) ~= "table" then
             start_time = socket.gettime()
-            while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
+            while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("handshake: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            app_data.nonce = security.base64.decode(nonce)
+            app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private,
+                server_pub))
+
+            success, err = pcall(app_data.socket.send_message,
+                "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
+                app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Client pub send failed: " .. err)
+                return false
+            end
+
+            local connect, error_message
+            app_data.pending_noawait_requests["connect"] = {
+                path = "connect",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        connect = true
+                    else
+                        error_message = err
+                    end
+                end
+            }
+
+            start_time = socket.gettime()
+            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("connect: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
+            client_token = client_token:match("^(.-)%z*$") or client_token
+            client_token = security.base64.encode(client_token)
+            success, err = pcall(app_data.socket.send_message,
+                "client_tok" .. client_token,
+                app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Client token send failed: " .. err)
+                return false
+            end
+
+            connect, error_message = nil, nil
+            app_data.pending_noawait_requests["connect"] = {
+                path = "connect",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        connect = true
+                    else
+                        error_message = err
+                    end
+                end
+            }
+
+            start_time = socket.gettime()
+            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("connect client token: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            print("Successfully new security CONNECTION")
+            app_data.no_server_decrypt = nil
+
+            app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
+            --------------------------------------------
+        else
+            app_data.no_server_decrypt = true
+            app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
         end
+
+        local start_time = socket.gettime()
+        while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
 
         print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
@@ -298,7 +302,9 @@ local function serialize_request(args, app_data, request_id, timestamp, request,
     end
     table.insert(arg_parts, "__id='" .. request_id .. "'")
     table.insert(arg_parts, "__time='" .. timestamp .. "'")
-    table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
+    if app_data.encryption then
+        table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
+    end
     if noawait then
         table.insert(arg_parts, "__noawait=True")
     end
@@ -339,7 +345,12 @@ local class = {
             start_time = socket.gettime()
         }
 
-        local success, err = encrypt_message(app_data, request)
+        local success, err
+        if app_data.encryption then
+            success, err = encrypt_message(app_data, request)
+        else
+            success, err = true, request
+        end
         if not success then
             app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
@@ -430,7 +441,7 @@ local class = {
                             if app_data.client_connect then
                                 app_data.client_connect:close()
                             else
-                                pcall(function () app_data.client:close() end)
+                                pcall(function() app_data.client:close() end)
                             end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
@@ -501,7 +512,12 @@ local class = {
             callback = callback
         }
 
-        local success, err = encrypt_message(app_data, request)
+        local success, err
+        if app_data.encryption then
+            success, err = encrypt_message(app_data, request)
+        else
+            success, err = true, request
+        end
         if not success then
             app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
@@ -533,9 +549,15 @@ app.connect = function(config)
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
-    local client_token_private = security.x25519.generate_keypair()
-    local client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
-    local client_private, client_public = security.x25519.generate_keypair()
+    config.encryption = config.encryption == nil and true or config.encryption
+
+    local client_token
+    local client_private, client_public
+    if config.encryption then
+        local client_token_private = security.x25519.generate_keypair()
+        client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
+        client_private, client_public = security.x25519.generate_keypair()
+    end
 
     local app_data
     app_data = setmetatable({
@@ -572,6 +594,8 @@ app.connect = function(config)
         client_token = client_token,
         client_private = client_private,
         client_public = client_public,
+
+        encryption = config.encryption,
     }, { __index = class })
 
     apps[app_data.name] = app_data
@@ -621,7 +645,7 @@ app.update = function(dt)
                             if app_data.client_connect then
                                 app_data.client_connect:close()
                             else
-                                pcall(function () app_data.client:close() end)
+                                pcall(function() app_data.client:close() end)
                             end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
@@ -699,7 +723,7 @@ app.close = function(app_data)
         if app_data.client_connect then
             app_data.client_connect:close()
         else
-            pcall(function () app_data.client:close() end)
+            pcall(function() app_data.client:close() end)
         end
         app_data.connected = false
         app_data.trying_to_reconnect = false
@@ -718,7 +742,7 @@ app.close = function(app_data)
     apps[app_data.name] = nil
 end
 
-app.close_all = function ()
+app.close_all = function()
     for name, app_data in pairs(apps) do
         app.close(app_data)
     end
@@ -2795,319 +2819,6 @@ SOFTWARE.]]
 local security = {}
 
 do
-    --[[
-MIT License
-
-Copyright (c) 2023 BernhardZat
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.]]
-
-    do
-        local matrix = {};
-        matrix.__index = matrix;
-
-        local setmetatable = setmetatable;
-        local new = function(n, m, init, zero, one)
-            local attrs = {
-                n = n,
-                m = m or n,
-                init = init or 0,
-                zero = zero or 0,
-                one = one or 1,
-                data = {},
-            };
-            return setmetatable(attrs, matrix);
-        end
-
-        local identity = function(size, zero, one)
-            zero = zero or 0;
-            one = one or 1;
-            local id = new(size, size, zero, zero, one);
-            for i = 0, size - 1 do
-                id:set(i, i, one);
-            end
-            return id;
-        end
-
-        matrix.set = function(self, i, j, v)
-            self.data[i * self.m + j] = v;
-        end
-
-        matrix.get = function(self, i, j)
-            return self.data[i * self.m + j] or self.init;
-        end
-
-        matrix.set_sub = function(self, sub, i, j)
-            for k = 0, sub.n - 1 do
-                for l = 0, sub.m - 1 do
-                    self:set(i + k, j + l, sub:get(k, l));
-                end
-            end
-        end
-
-        matrix.get_sub = function(self, i, j, n, m)
-            local sub = new(n, m);
-            for k = 0, n - 1 do
-                for l = 0, m - 1 do
-                    sub:set(k, l, self:get(i + k, j + l));
-                end
-            end
-            return sub;
-        end
-
-        matrix.set_row = function(self, row, i)
-            self:set_sub(row, i, 0);
-        end
-
-        matrix.get_row = function(self, i)
-            return self:get_sub(i, 0, 1, self.m);
-        end
-
-        matrix.set_col = function(self, column, j)
-            self:set_sub(column, 0, j);
-        end
-
-        matrix.get_col = function(self, j)
-            return self:get_sub(0, j, self.n, 1);
-        end
-
-        matrix.__add = function(a, b)
-            local c = new(a.n, a.m);
-            for i = 0, a.n - 1 do
-                for j = 0, a.m - 1 do
-                    c:set(i, j, a:get(i, j) + b:get(i, j));
-                end
-            end
-            return c;
-        end
-
-        matrix.__sub = function(a, b)
-            local c = new(a.n, a.m);
-            for i = 0, a.n - 1 do
-                for j = 0, a.m - 1 do
-                    c:set(i, j, a:get(i, j) - b:get(i, j));
-                end
-            end
-            return c;
-        end
-
-        matrix.__mul = function(a, b)
-            local c = new(a.n, b.m);
-            for i = 0, a.n - 1 do
-                for j = 0, b.m - 1 do
-                    local sum = 0;
-                    for k = 0, a.m - 1 do
-                        sum = sum + a:get(i, k) * b:get(k, j);
-                    end
-                    c:set(i, j, sum);
-                end
-            end
-            return c;
-        end
-
-        local tostring = tostring;
-        matrix.__tostring = function(self)
-            local s = "";
-            for i = 0, self.n - 1 do
-                for j = 0, self.m - 1 do
-                    s = s .. tostring(self:get(i, j)) .. " ";
-                end
-                s = s .. "\n";
-            end
-            return s;
-        end
-
-        security.matrix = {
-            new = new,
-            identity = identity,
-            set = matrix.set,
-            get = matrix.get,
-            set_sub = matrix.set_sub,
-            get_sub = matrix.get_sub,
-            set_row = matrix.set_row,
-            get_row = matrix.get_row,
-            set_col = matrix.set_col,
-            get_col = matrix.get_col,
-        };
-    end
-
-    do
-        local Matrix = security.matrix
-        local M = Matrix.new;
-
-        local u8_and_table = M(256);
-        for i = 0, 7 do
-            local m1 = u8_and_table:get_sub(0, 0, 2 ^ i, 2 ^ i);
-            local m2 = M(2 ^ i, 2 ^ i, 2 ^ i);
-            u8_and_table:set_sub(m1, 2 ^ i, 0);
-            u8_and_table:set_sub(m1, 0, 2 ^ i);
-            u8_and_table:set_sub(m1 + m2, 2 ^ i, 2 ^ i);
-        end
-
-        local u8_lsh = function(a, n)
-            return a * 2 ^ n % 0x100;
-        end
-
-        local u8_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u8_lrot = function(a, n)
-            n = n % 8;
-            return u8_lsh(a, n) + u8_rsh(a, 8 - n);
-        end
-
-        local u8_rrot = function(a, n)
-            n = n % 8;
-            return u8_rsh(a, n) + u8_lsh(a, 8 - n);
-        end
-
-        local u8_not = function(a)
-            return 0xFF - a;
-        end
-
-        local u8_and = function(a, b)
-            return u8_and_table:get(a, b);
-        end
-
-        local u8_xor = function(a, b)
-            return u8_not(u8_and(a, b)) - u8_and(u8_not(a), u8_not(b));
-        end
-
-        local u8_or = function(a, b)
-            return u8_and(a, b) + u8_xor(a, b);
-        end
-
-        local u16_lsh = function(a, n)
-            return a * 2 ^ n % 0x10000;
-        end
-
-        local u16_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u16_lrot = function(a, n)
-            n = n % 16;
-            return u16_lsh(a, n) + u16_rsh(a, 16 - n);
-        end
-
-        local u16_rrot = function(a, n)
-            n = n % 16;
-            return u16_rsh(a, n) + u16_lsh(a, 16 - n);
-        end
-
-        local u16_not = function(a)
-            return 0xFFFF - a;
-        end
-
-        local u16_and = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_and(a1, b1), u8_and(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u16_xor = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_xor(a1, b1), u8_xor(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u16_or = function(a, b)
-            local a1, a2 = u16_rsh(a, 8), a % 0x100;
-            local b1, b2 = u16_rsh(b, 8), b % 0x100;
-            local r1, r2 = u8_or(a1, b1), u8_or(a2, b2);
-            return u16_lsh(r1, 8) + r2;
-        end
-
-        local u32_lsh = function(a, n)
-            return a * 2 ^ n % 0x100000000;
-        end
-
-        local u32_rsh = function(a, n)
-            return a / 2 ^ n - (a / 2 ^ n) % 1;
-        end
-
-        local u32_lrot = function(a, n)
-            n = n % 32;
-            return u32_lsh(a, n) + u32_rsh(a, 32 - n);
-        end
-
-        local u32_rrot = function(a, n)
-            n = n % 32;
-            return u32_rsh(a, n) + u32_lsh(a, 32 - n);
-        end
-
-        local u32_not = function(a)
-            return 0xFFFFFFFF - a;
-        end
-
-        local u32_and = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_and(a1, b1), u16_and(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        local u32_xor = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_xor(a1, b1), u16_xor(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        local u32_or = function(a, b)
-            local a1, a2 = u32_rsh(a, 16), a % 0x10000;
-            local b1, b2 = u32_rsh(b, 16), b % 0x10000;
-            local r1, r2 = u16_or(a1, b1), u16_or(a2, b2);
-            return u32_lsh(r1, 16) + r2;
-        end
-
-        security.bitops = {
-            u8_lsh = u8_lsh,
-            u8_rsh = u8_rsh,
-            u8_lrot = u8_lrot,
-            u8_rrot = u8_rrot,
-            u8_not = u8_not,
-            u8_and = u8_and,
-            u8_xor = u8_xor,
-            u8_or = u8_or,
-            u16_lsh = u16_lsh,
-            u16_rsh = u16_rsh,
-            u16_lrot = u16_lrot,
-            u16_rrot = u16_rrot,
-            u16_not = u16_not,
-            u16_and = u16_and,
-            u16_xor = u16_xor,
-            u16_or = u16_or,
-            u32_lsh = u32_lsh,
-            u32_rsh = u32_rsh,
-            u32_lrot = u32_lrot,
-            u32_rrot = u32_rrot,
-            u32_not = u32_not,
-            u32_and = u32_and,
-            u32_xor = u32_xor,
-            u32_or = u32_or,
-        };
-    end
-
     do
         local string_char, math_floor, math_log, table_concat = string.char, math.floor, math.log, table.concat;
         local number_to_bytestring = function(num, n)
@@ -3131,61 +2842,65 @@ SOFTWARE.]]
             return num;
         end
 
-        local string_char = string.char
-        local bytetable_to_bytestring = function(t)
-            local s = t[0] and string_char(t[0]) or "";
-            for i = 1, #t do
-                s = s .. string_char(t[i]);
-            end
-            return s;
-        end
-
-        local bytestring_to_bytetable = function(s, zero_based)
-            local t = {};
-            local j = zero_based and 1 or 0;
-            for i = 1, s:len() do
-                t[i - j] = s:byte(i);
-            end
-            return t;
-        end
-
-        local bytetable_to_number = function(t)
-            local num = 0;
-            for i = 0, #t - (t[0] and 0 or 1) do
-                num = num + t[#t - i] * 0x100 ^ i;
-            end
-            return num;
-        end
-
         security.util = {
             number_to_bytestring = number_to_bytestring,
             bytestring_to_number = bytestring_to_number,
-            bytetable_to_bytestring = bytetable_to_bytestring,
-            bytestring_to_bytetable = bytestring_to_bytetable,
-            bytetable_to_number = bytetable_to_number,
         }
     end
 
     do
-        local Bitops = security.bitops;
-        local Util = security.util;
-
-        local XOR, LROT = Bitops.u32_xor, Bitops.u32_lrot;
-        local num_to_bytes, num_from_bytes = Util.number_to_bytestring, Util.bytestring_to_number;
-
-        local MOD = 0x100000000;
-
-        local is_luajit = type(jit) == 'table';
-        if is_luajit then
-            local bit = require('bit');
-            XOR = bit.bxor;
-            LROT = bit.rol;
+        local has_bit32, bit32 = pcall(require, "bit32");
+        local has_bit, bit = pcall(require, "bit");
+        local u32_xor, u32_lrot;
+        if has_bit32 then
+            u32_xor = bit32.bxor;
+            u32_lrot = function(a, n)
+                return bit32.lrotate(a, n % 32);
+            end
+        elseif has_bit then
+            u32_xor = bit.bxor;
+            u32_lrot = bit.rol;
         else
-            XOR = Bitops.u32_xor;
-            LROT = Bitops.u32_lrot;
+            local and_table = {};
+            do
+                for i = 0, 255 do
+                    and_table[i] = {};
+                    for j = 0, 255 do
+                        local result = 0;
+                        local bit_val = 1;
+                        for k = 0, 7 do
+                            if (i % (2 * bit_val)) >= bit_val and (j % (2 * bit_val)) >= bit_val then
+                                result = result + bit_val;
+                            end
+                            bit_val = bit_val * 2;
+                        end
+                        and_table[i][j] = result;
+                    end
+                end
+            end
+
+            local math_floor = math.floor;
+            function u32_xor(a, b)
+                local a1, a2, b1, b2 = math_floor(a / 0x10000), a % 0x10000, math_floor(b / 0x10000), b % 0x10000;
+
+                local a161, a162, b161, b162 = math_floor(a1 / 0x100), a1 % 0x100, math_floor(b1 / 0x100), b1 % 0x100;
+                local r1 = (a161 + b161 - 2 * and_table[a161 % 0x100][b161 % 0x100]) % 0x100 * 0x100 + (a162 + b162 - 2 * and_table[a162 % 0x100][b162 % 0x100]) % 0x100;
+
+                a161, a162, b161, b162 = math_floor(a2 / 0x100), a2 % 0x100, math_floor(b2 / 0x100), b2 % 0x100;
+                local r2 = (a161 + b161 - 2 * and_table[a161 % 0x100][b161 % 0x100]) % 0x100 * 0x100 + (a162 + b162 - 2 * and_table[a162 % 0x100][b162 % 0x100]) % 0x100;
+                return r1 * 0x10000 + r2;
+            end
+
+            function u32_lrot(a, n)
+                n = n % 32;
+                return ((a * (2 ^ n)) % 0x100000000 + math_floor(a / (2 ^ (32 - n)))) % 0x100000000;
+            end
         end
 
-        local char = string.char;
+        local num_to_bytes, num_from_bytes, MOD, char, XOR, LROT =
+            security.util.number_to_bytestring, security.util.bytestring_to_number, 0x100000000, string.char, u32_xor,
+            u32_lrot
+
         local function unpack(s, len)
             local array = {};
             local count = 0;
@@ -3222,7 +2937,7 @@ SOFTWARE.]]
             s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
         end
 
-        local CONSTANTS = {0x61707865, 0x3320646e, 0x79622d32, 0x6b206574};
+        local CONSTANTS = { 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574 };
         local block = function(key, nonce, counter)
             local init = {
                 CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],

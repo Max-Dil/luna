@@ -194,65 +194,6 @@ end
 --     lunac.close()
 -- end
 
-
--- _G.love = love
--- local lunac
--- function love.load()
---     lunac = require("lunac")
---     _G.client = lunac.connect_to_app({
---         host = "127.0.0.1",
---         port = 8081,
---         name = "test server",
---         no_errors = true,
---     })
-
---     client:noawait_fetch("api/echo", function (data, err)
---         print("noawait_fetch response: ", data, "err:" ..tostring(err))
---     end,{text = "hello world2"})
-
---     local response = client:fetch("api/echo", {text = "hello world"})
---     print("Echo data: "..response)
--- end
-
--- local t = 0
--- function love.update(dt)
---     lunac.update(dt)
-
---     t = t + dt
---     if t > 2 then
---         client:noawait_fetch("default/ping",function()end,{})
---         t = 0
---     end
--- end
-
--- local lunac
--- function love.load()
---     lunac = require("lunac")
---     _G.client = lunac.connect_to_app({
---         host = "127.0.0.1",
---         port = 1025,
---         name = "test server",
-
---         reconnect_time = 5
---     })
-
---     -- local response = client:fetch("api/echo", {text = "hello world"})
---     -- print("Echo data: "..response)
--- end
-
--- local t = 0
--- function love.update(dt)
---     lunac.update(dt)
-
---     t = t + dt
---     if t > 2 then
---         client:noawait_fetch("default/ping",function()end,{})
---         t = 0
---     end
--- end
-
-
-
 -------------------
 -- web_app_test --
 -------------------
@@ -506,3 +447,32 @@ end
 -- function love.quit()
 --     lunac.close()
 -- end
+
+
+-- local security = require("luna.libs.security")
+
+-- local start_time = os.clock()
+-- local private, public = security.x25519.generate_keypair()
+-- local cprivate, cpublic = security.x25519.generate_keypair()
+-- local key = security.utils.key_to_string(security.x25519.get_shared_key(private, cpublic))
+-- local ckey = security.utils.key_to_string(security.x25519.get_shared_key(cprivate, public))
+-- local keygen_time = os.clock() - start_time
+
+-- print("Key generation time: " .. keygen_time .. " seconds")
+
+-- local message = string.rep("T", 1024 * 1024)
+-- local nonce = security.utils.generate_nonce()
+
+-- start_time = os.clock()
+-- local encrypted = security.chacha20.encrypt(message, key, nonce)
+-- local encryption_time = os.clock() - start_time
+
+-- print("Encryption time: " .. encryption_time .. " seconds")
+
+-- start_time = os.clock()
+-- local decrypted = security.chacha20.encrypt(encrypted, key, nonce)
+-- local decryption_time = os.clock() - start_time
+
+-- print("Decryption time: " .. decryption_time .. " seconds")
+-- print("Keys match: " .. tostring(key == ckey))
+-- print("Message match: " .. tostring(message == decrypted))
