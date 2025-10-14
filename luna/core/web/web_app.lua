@@ -117,7 +117,10 @@ end
 
 web_app.update = function(dt)
     for name, app_data in pairs(apps) do
-        app_data.server:update()
+        local s, e = pcall(app_data.server.update, app_data.server)
+        if not s then
+            handle_error(app_data, e, 2)
+        end
     end
 end
 

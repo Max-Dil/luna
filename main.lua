@@ -31,7 +31,7 @@ function love.load()
         name = "test server",
 
         server = luna,
-        reconnect_time = 5
+        reconnect_time = 5,
     })
 
     local response = client:fetch("api/echo", {text = "hello world"})
@@ -56,7 +56,7 @@ end
 
 -- local luna, lunac
 -- function love.load()
---     luna = require("luna")
+--     luna = require("luna.init")
 
 --     local app = luna.new_app({
 --         host = "127.0.0.1",
@@ -71,6 +71,8 @@ end
 --         end,
 
 --         disconnect_time = 10, -- the time after which the client will disconnect if you do not send requests is 10 by default.
+
+--         -- encryption = false,
 --     })
 
 --     local default_router = app:new_router({
@@ -120,7 +122,7 @@ end
 --         end,
 --     })
 
---     lunac = require("lunac")
+--     lunac = require("lunac.init")
 --     _G.client = lunac.connect_to_app({
 --         host = "127.0.0.1",
 --         port = 8081,
@@ -130,7 +132,9 @@ end
 --         reconnect_time = 5,
 --         listener = function(message)
 --             print("New message client:send     ", message)
---         end
+--         end,
+
+--         -- encryption = false,
 --     })
 
 --     client:noawait_fetch("api/echo", function (data, err)
@@ -161,8 +165,12 @@ end
 --     -- client:noawait_fetch("api/echo", function (data, err)
 --     --     print("noawait_fetch response: ", #data, " sizewait:" ..#string.rep("hello world",89900))
 --     -- end,{text = string.rep("hello world",89900)})
+
+--     -- local start = os.clock()
 --     -- local response = client:fetch("api/echo", {text = string.rep("hello world",99900)}, 100)
 --     -- print("size: "..#response, " size wait: "..#string.rep("hello world",99900))
+
+--     -- print("Time", os.clock() - start)
 
 --     -- client:noawait_fetch("api/echo", function (data, err)
 --     --     print("size: "..#data, " size wait: "..#string.rep("hello world",100))
@@ -315,7 +323,7 @@ end
 -------------------
 _G.love = love
 
-local luna = require("luna")
+local luna = require("luna.init")
 local app = luna.new_http_app({
     name = "test http app",
     debug = true,
@@ -385,7 +393,7 @@ do -- Веб сокеты тест для index.html сайт по ссылке 
     })
 end
 
-local lunac = require("lunac")
+local lunac = require("lunac.init")
 lunac.http.init({
     luna = luna,
 })
@@ -460,7 +468,6 @@ function love.quit()
     luna.close()
     lunac.close()
 end
-
 -------------------
 -- end ------------
 -------------------

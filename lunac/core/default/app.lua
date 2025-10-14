@@ -82,150 +82,154 @@ local function try_connect(app_data)
         app_data.connected = true
         app_data.trying_to_reconnect = false
 
-        ---------------- Подключение ---------------
-        app_data.nonce = nil
-        app_data.shared_secret = nil
+        if app_data.encryption then
+            ---------------- Подключение ---------------
+            app_data.nonce = nil
+            app_data.shared_secret = nil
 
-        app_data.no_server_decrypt = true
-        local TIMEOUT = 5
-        local start_time
+            app_data.no_server_decrypt = true
+            local TIMEOUT = 5
+            local start_time
 
-        local success, err = pcall(app_data.socket.send_message, "pls connect", app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Init send failed: " .. err)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
+            local success, err = pcall(app_data.socket.send_message, "pls connect", app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Init send failed: " .. err)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
 
-        local server_pub, token, nonce
-        local error_message
-        app_data.pending_noawait_requests["handshake"] = {
-            path = "handshake",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    local success, decoded = pcall(json.decode, data)
-                    if success then
-                        if decoded.pub and decoded.token and decoded.nonce then
-                            server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
-                                decoded.nonce
+            local server_pub, token, nonce
+            local error_message
+            app_data.pending_noawait_requests["handshake"] = {
+                path = "handshake",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        local success, decoded = pcall(json.decode, data)
+                        if success then
+                            if decoded.pub and decoded.token and decoded.nonce then
+                                server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
+                                    decoded.nonce
+                            else
+                                error_message = "Error not found connect args"
+                            end
                         else
-                            error_message = "Error not found connect args"
+                            error_message = decoded
                         end
                     else
-                        error_message = decoded
+                        error_message = err
                     end
-                else
-                    error_message = err
                 end
-            end
-        }
+            }
 
-        start_time = socket.gettime()
-        while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("handshake: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        app_data.nonce = security.base64.decode(nonce)
-        app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private, server_pub))
-
-        success, err = pcall(app_data.socket.send_message,
-            "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
-            app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Client pub send failed: " .. err)
-            return false
-        end
-
-        local connect, error_message
-        app_data.pending_noawait_requests["connect"] = {
-            path = "connect",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    connect = true
-                else
-                    error_message = err
-                end
-            end
-        }
-
-        start_time = socket.gettime()
-        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("connect: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
-        client_token = client_token:match("^(.-)%z*$") or client_token
-        client_token = security.base64.encode(client_token)
-        success, err = pcall(app_data.socket.send_message,
-            "client_tok" .. client_token,
-            app_data.host, app_data.port)
-        if not success then
-            app_data.error_handler("Client token send failed: " .. err)
-            return false
-        end
-
-        connect, error_message = nil, nil
-        app_data.pending_noawait_requests["connect"] = {
-            path = "connect",
-            timestamp = 0,
-            callback = function(data, err)
-                if data then
-                    connect = true
-                else
-                    error_message = err
-                end
-            end
-        }
-
-        start_time = socket.gettime()
-        while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
-            if app_data.server then app_data.server.update(1 / 60) end
-            app.update(1 / 60)
-            socket.sleep(0.001)
-        end
-
-        if error_message then
-            app_data.error_handler("connect client token: " .. error_message)
-            app_data.connected = false
-            app_data.trying_to_reconnect = true
-            app_data.client = nil
-            return false
-        end
-
-        print("Successfully new security CONNECTION")
-        app_data.no_server_decrypt = nil
-
-        app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
-        --------------------------------------------
-
-        if type(jit) ~= "table" then
             start_time = socket.gettime()
-            while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
+            while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("handshake: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            app_data.nonce = security.base64.decode(nonce)
+            app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private,
+                server_pub))
+
+            success, err = pcall(app_data.socket.send_message,
+                "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
+                app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Client pub send failed: " .. err)
+                return false
+            end
+
+            local connect, error_message
+            app_data.pending_noawait_requests["connect"] = {
+                path = "connect",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        connect = true
+                    else
+                        error_message = err
+                    end
+                end
+            }
+
+            start_time = socket.gettime()
+            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("connect: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
+            client_token = client_token:match("^(.-)%z*$") or client_token
+            client_token = security.base64.encode(client_token)
+            success, err = pcall(app_data.socket.send_message,
+                "client_tok" .. client_token,
+                app_data.host, app_data.port)
+            if not success then
+                app_data.error_handler("Client token send failed: " .. err)
+                return false
+            end
+
+            connect, error_message = nil, nil
+            app_data.pending_noawait_requests["connect"] = {
+                path = "connect",
+                timestamp = 0,
+                callback = function(data, err)
+                    if data then
+                        connect = true
+                    else
+                        error_message = err
+                    end
+                end
+            }
+
+            start_time = socket.gettime()
+            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+                if app_data.server then app_data.server.update(1 / 60) end
+                app.update(1 / 60)
+                socket.sleep(0.001)
+            end
+
+            if error_message then
+                app_data.error_handler("connect client token: " .. error_message)
+                app_data.connected = false
+                app_data.trying_to_reconnect = true
+                app_data.client = nil
+                return false
+            end
+
+            print("Successfully new security CONNECTION")
+            app_data.no_server_decrypt = nil
+
+            app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
+            --------------------------------------------
+        else
+            app_data.no_server_decrypt = true
+            app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
         end
+
+        local start_time = socket.gettime()
+        while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
 
         print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
@@ -280,7 +284,9 @@ local function serialize_request(args, app_data, request_id, timestamp, request,
     end
     table.insert(arg_parts, "__id='" .. request_id .. "'")
     table.insert(arg_parts, "__time='" .. timestamp .. "'")
-    table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
+    if app_data.encryption then
+        table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
+    end
     if noawait then
         table.insert(arg_parts, "__noawait=True")
     end
@@ -321,7 +327,12 @@ local class = {
             start_time = socket.gettime()
         }
 
-        local success, err = encrypt_message(app_data, request)
+        local success, err
+        if app_data.encryption then
+            success, err = encrypt_message(app_data, request)
+        else
+            success, err = true, request
+        end
         if not success then
             app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
@@ -412,7 +423,7 @@ local class = {
                             if app_data.client_connect then
                                 app_data.client_connect:close()
                             else
-                                pcall(function () app_data.client:close() end)
+                                pcall(function() app_data.client:close() end)
                             end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
@@ -483,7 +494,12 @@ local class = {
             callback = callback
         }
 
-        local success, err = encrypt_message(app_data, request)
+        local success, err
+        if app_data.encryption then
+            success, err = encrypt_message(app_data, request)
+        else
+            success, err = true, request
+        end
         if not success then
             app_data.pending_requests[request_id] = nil
             if app_data.no_errors then
@@ -515,9 +531,15 @@ app.connect = function(config)
         error("Error connect to app unknown host, app_name: " .. config.name, 2)
     end
 
-    local client_token_private = security.x25519.generate_keypair()
-    local client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
-    local client_private, client_public = security.x25519.generate_keypair()
+    config.encryption = config.encryption == nil and true or config.encryption
+
+    local client_token
+    local client_private, client_public
+    if config.encryption then
+        local client_token_private = security.x25519.generate_keypair()
+        client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
+        client_private, client_public = security.x25519.generate_keypair()
+    end
 
     local app_data
     app_data = setmetatable({
@@ -554,6 +576,8 @@ app.connect = function(config)
         client_token = client_token,
         client_private = client_private,
         client_public = client_public,
+
+        encryption = config.encryption,
     }, { __index = class })
 
     apps[app_data.name] = app_data
@@ -603,7 +627,7 @@ app.update = function(dt)
                             if app_data.client_connect then
                                 app_data.client_connect:close()
                             else
-                                pcall(function () app_data.client:close() end)
+                                pcall(function() app_data.client:close() end)
                             end
                             app_data.connected = false
                             app_data.trying_to_reconnect = true
@@ -681,7 +705,7 @@ app.close = function(app_data)
         if app_data.client_connect then
             app_data.client_connect:close()
         else
-            pcall(function () app_data.client:close() end)
+            pcall(function() app_data.client:close() end)
         end
         app_data.connected = false
         app_data.trying_to_reconnect = false
@@ -700,7 +724,7 @@ app.close = function(app_data)
     apps[app_data.name] = nil
 end
 
-app.close_all = function ()
+app.close_all = function()
     for name, app_data in pairs(apps) do
         app.close(app_data)
     end
