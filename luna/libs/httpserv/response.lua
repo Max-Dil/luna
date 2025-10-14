@@ -22,9 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ]]
 
-local constants, json =
+local constants, json, util =
     require("luna.libs.httpserv.constants"),
-    require("luna.libs.httpserv.json")
+    require("luna.libs.httpserv.json"),
+    require("luna.libs.httpserv.util")
 
 local response = {}
 
@@ -65,6 +66,30 @@ function Response:send(data)
     if type(self.body) == "string" and not self.headers["Content-Type"] then
         self.headers["Content-Type"] = "text/html"
     end
+
+    return self
+end
+
+function Response:sendFile(filePath, mimeType)
+    if not util.fileExists(filePath) then
+        self:status(404):send("File not found")
+        return self
+    end
+
+    local file = io.open(filePath, "rb")
+    if not file then
+        self:status(500):send("Unable to read file")
+        return self
+    end
+
+    local content = file:read("*a")
+    file:close()
+
+    local ext = util.getFileExtension(filePath)
+    mimeType = mimeType or constants.MIME_TYPES[ext and ext:sub(2)] or "application/octet-stream"
+
+    self:setHeader("Content-Type", mimeType)
+    self.body = content
 
     return self
 end

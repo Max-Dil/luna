@@ -136,38 +136,42 @@ do
         end
 
         local function quarter_round(s, a, b, c, d)
-            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 16);
-            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 12);
-            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 8);
-            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
+            local sa, sb, sc, sd = s[a], s[b], s[c], s[d]
+            sa = (sa + sb) % MOD; sd = LROT(XOR(sd, sa), 16)
+            sc = (sc + sd) % MOD; sb = LROT(XOR(sb, sc), 12)
+            sa = (sa + sb) % MOD; sd = LROT(XOR(sd, sa), 8)
+            sc = (sc + sd) % MOD; sb = LROT(XOR(sb, sc), 7)
+            s[a], s[b], s[c], s[d] = sa, sb, sc, sd
         end
 
         local CONSTANTS = { 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574 };
-        local block = function(key, nonce, counter)
-            local init = {
+        local function block(key, nonce, counter)
+            local state = {
                 CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],
                 key[1], key[2], key[3], key[4],
                 key[5], key[6], key[7], key[8],
-                counter, nonce[1], nonce[2], nonce[3],
+                counter, nonce[1], nonce[2], nonce[3]
             }
-            local state = {};
-            for i = 1, 16 do
-                state[i] = init[i];
-            end
+
+            local init = {}
+            for i = 1, 16 do init[i] = state[i] end
+
             for _ = 1, 10 do
-                quarter_round(state, 1, 5, 9, 13);
-                quarter_round(state, 2, 6, 10, 14);
-                quarter_round(state, 3, 7, 11, 15);
-                quarter_round(state, 4, 8, 12, 16);
-                quarter_round(state, 1, 6, 11, 16);
-                quarter_round(state, 2, 7, 12, 13);
-                quarter_round(state, 3, 8, 9, 14);
-                quarter_round(state, 4, 5, 10, 15);
+                quarter_round(state, 1, 5, 9, 13)
+                quarter_round(state, 2, 6, 10, 14)
+                quarter_round(state, 3, 7, 11, 15)
+                quarter_round(state, 4, 8, 12, 16)
+                quarter_round(state, 1, 6, 11, 16)
+                quarter_round(state, 2, 7, 12, 13)
+                quarter_round(state, 3, 8, 9, 14)
+                quarter_round(state, 4, 5, 10, 15)
             end
+
             for i = 1, 16 do
-                state[i] = (state[i] + init[i]) % 0x100000000;
+                state[i] = (state[i] + init[i]) % MOD
             end
-            return state;
+
+            return state
         end
 
         local unpack, pack, floor, ceil, table_concat = unpack, pack, math.floor, math.ceil, table.concat;

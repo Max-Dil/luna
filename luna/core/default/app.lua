@@ -29,8 +29,17 @@ local socket, router, json, message_manager, security =
     require("luna.libs.udp_messages"),
     require("luna.libs.security")
 
-local type, pairs, pcall, error, setmetatable, tostring, tonumber, coroutine, table, string =
-    type, pairs, pcall, error, setmetatable, tostring, tonumber, coroutine, table, string
+local type, pairs, pcall, error, setmetatable, tostring, tonumber, security_chacha20_encrypt,
+    security_base64_encode, security_base64_decode, table_insert, coroutine_resume, table_concat,
+    string_format, json_encode, os_time, string_sub, string_len, security_utils_split,
+    security_utils_uuid, security_utils_generate_nonce, security_utils_key_to_string,
+    security_x25519_generate_keypair, security_utils_string_to_key, security_x25519_get_shared_key,
+    print =
+        type, pairs, pcall, error, setmetatable, tostring, tonumber, security.chacha20.encrypt,
+        security.base64.encode, security.base64.decode, table.insert, coroutine.resume, table.concat,
+        string.format, json.encode, os.time, string.sub, string.len, security.utils.split, security.utils.uuid,
+        security.utils.generate_nonce, security.utils.key_to_string, security.x25519.generate_keypair,
+        security.utils.string_to_key, security.x25519.get_shared_key, print
 
 local app, apps = {}, {}
 
@@ -46,11 +55,11 @@ end
 
 local encrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
-        local success, err = pcall(security.chacha20.encrypt, message,
+        local success, err = pcall(security_chacha20_encrypt, message,
             app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
-            success, err = pcall(security.base64.encode, err)
+            success, err = pcall(security_base64_encode, err)
         end
         return success, err
     else
@@ -60,9 +69,9 @@ end
 
 local decrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
-        local success, err = pcall(security.base64.decode, message)
+        local success, err = pcall(security_base64_decode, message)
         if success then
-            success, err = pcall(security.chacha20.encrypt, err,
+            success, err = pcall(security_chacha20_encrypt, err,
                 app_data.shared_secret, app_data.nonce)
             if success then
                 err = err:match("^(.-)%z*$") or err
@@ -99,7 +108,7 @@ app.new_app = function(config)
     config.encryption = config.encryption == nil and true or config.encryption
     local server_private, server_public
     if config.encryption then
-        server_private, server_public = security.x25519.generate_keypair()
+        server_private, server_public = security_x25519_generate_keypair()
     end
 
     app_data = setmetatable({
@@ -127,7 +136,7 @@ app.new_app = function(config)
         get_clients = function()
             local clients = {}
             for key, value in pairs(app_data.clients) do
-                table.insert(clients, value)
+                table_insert(clients, value)
             end
             return clients
         end,
@@ -242,11 +251,11 @@ end
 
 app.update = function(dt)
     dt = dt or (1 / 60)
-    for key, m in pairs(apps) do
-        for coro, data in pairs(m.running_funs) do
+    for key, app_data in pairs(apps) do
+        for coro, data in pairs(app_data.running_funs) do
             local request_handler, request, client, request_result = data[1], data[2], data[3], nil
 
-            local ok, ok2, result = pcall(coroutine.resume, coro, request.args, client)
+            local ok, ok2, result = pcall(coroutine_resume, coro, request.args, client)
             if result then
                 if not ok then
                     if request_handler.error_handler then
@@ -264,9 +273,9 @@ app.update = function(dt)
 
                 if not request_result and request_handler.response_validate then
                     if not validate_value(result, request_handler.response_validate) then
-                        local expected_str = table.concat(request_handler.response_validate, " or ")
+                        local expected_str = table_concat(request_handler.response_validate, " or ")
                         local actual_type = type(result)
-                        local err_msg = string.format("Response expected to be %s, got %s (%s)",
+                        local err_msg = string_format("Response expected to be %s, got %s (%s)",
                             expected_str, actual_type, tostring(result))
 
                         if request_handler.error_handler then
@@ -284,41 +293,41 @@ app.update = function(dt)
                     if not client.is_close then
                         local response = request_result.response
                         local ok, send_err = pcall(function()
-                            client:send(json.encode(response))
+                            client:send(json_encode(response))
                         end)
                         if not ok then
                             print("Error in async request: " .. send_err .. "  id:" ..
                                 response.id .. "  path:" .. response.request)
                         end
                     end
-                    m.running_funs[coro] = nil
+                    app_data.running_funs[coro] = nil
                 end
             end
         end
 
-        m.socket.update(m.server, dt)
+        app_data.socket.update(app_data.server, dt)
 
-        local messages = m.socket.receive_message(m.server)
-        local currentTime = os.time()
+        local messages = app_data.socket.receive_message(app_data.server)
+        local currentTime = os_time()
         for _, msg in pairs(messages) do
             local data, ip, port = msg.message, msg.ip, msg.port
             local client_key = ip .. ":" .. port
-            local client = m.clients[client_key]
+            local client = app_data.clients[client_key]
 
             if not client then
                 if not ip:match("^%d+%.%d+%.%d+%.%d+$") then
-                    handle_error(m, "The client's IP address is invalid", 2)
+                    handle_error(app_data, "The client's IP address is invalid", 2)
                 end
-                m.ip_counts[ip] = (m.ip_counts[ip] or 0) + 1
-                if m.ip_counts[ip] <= m.max_ip_connected then
-                    client = m.socket.new_connect(m.server, ip, port)
-                    m.clients[client_key] = client
+                app_data.ip_counts[ip] = (app_data.ip_counts[ip] or 0) + 1
+                if app_data.ip_counts[ip] <= app_data.max_ip_connected then
+                    client = app_data.socket.new_connect(app_data.server, ip, port)
+                    app_data.clients[client_key] = client
                     client.lastActive = currentTime
 
-                    if m.encryption then
-                        client.auth_token = security.utils.uuid()
-                        local nonce = security.base64.encode(security.utils.generate_nonce())
-                        client.nonce = security.base64.decode(nonce)
+                    if app_data.encryption then
+                        client.auth_token = security_utils_uuid()
+                        local nonce = security_base64_encode(security_utils_generate_nonce())
+                        client.nonce = security_base64_decode(nonce)
 
                         client.__send = client.send
                         client.send = function(self, data)
@@ -329,11 +338,11 @@ app.update = function(dt)
                         end
 
                         local ok, send_err = pcall(function()
-                            client:__send(json.encode({
+                            client:__send(json_encode({
                                 __luna = true,
                                 request = "handshake",
-                                response = json.encode({
-                                    pub = security.utils.key_to_string(m.server_public),
+                                response = json_encode({
+                                    pub = security_utils_key_to_string(app_data.server_public),
                                     token = client.auth_token,
                                     nonce = nonce
                                 }),
@@ -344,7 +353,7 @@ app.update = function(dt)
                         end)
 
                         if not ok then
-                            handle_error(m, "Error sending handshake: " .. send_err)
+                            handle_error(app_data, "Error sending handshake: " .. send_err)
                         end
                     end
 
@@ -353,46 +362,46 @@ app.update = function(dt)
                         pcall(self.send, self, "__luna__close")
                         self.__close()
                         if self.is_close then
-                            if m.debug then
-                                print("app: " .. m.name, "Client disconnected ip: " .. self.ip ..
+                            if app_data.debug then
+                                print("app: " .. app_data.name, "Client disconnected ip: " .. self.ip ..
                                     ":" .. self.port)
                             end
-                            m.ip_counts[self.ip] = (m.ip_counts[self.ip] or 1) - 1
-                            if m.ip_counts[self.ip] <= 0 then
-                                m.ip_counts[self.ip] = nil
+                            app_data.ip_counts[self.ip] = (app_data.ip_counts[self.ip] or 1) - 1
+                            if app_data.ip_counts[self.ip] <= 0 then
+                                app_data.ip_counts[self.ip] = nil
                             end
-                            if m.close_client then
-                                local ok, cb_err = pcall(m.close_client, self)
+                            if app_data.close_client then
+                                local ok, cb_err = pcall(app_data.close_client, self)
                                 if not ok then
-                                    handle_error(m, "Error in close_client callback: " .. cb_err)
+                                    handle_error(app_data, "Error in close_client callback: " .. cb_err)
                                 end
                             end
-                            m.clients[self.ip .. ":" .. self.port] = nil
+                            app_data.clients[self.ip .. ":" .. self.port] = nil
                             self = nil
                         end
                     end
-                    if m.debug then
-                        print("app: " .. m.name, "New client connected ip: " .. ip .. ", port: " .. port)
+                    if app_data.debug then
+                        print("app: " .. app_data.name, "New client connected ip: " .. ip .. ", port: " .. port)
                     end
-                    if m.new_client then
-                        local ok, cb_err = pcall(m.new_client, client)
+                    if app_data.new_client then
+                        local ok, cb_err = pcall(app_data.new_client, client)
                         if not ok then
-                            handle_error(m, "Error in new_client callback: " .. cb_err)
+                            handle_error(app_data, "Error in new_client callback: " .. cb_err)
                         end
                     end
                 else
                     print("Rejected connection from " ..
-                        ip .. ":" .. port .. ": max connections (" .. m.max_ip_connected .. ") reached")
-                    m.ip_counts[ip] = m.ip_counts[ip] - 1
+                        ip .. ":" .. port .. ": max connections (" .. app_data.max_ip_connected .. ") reached")
+                    app_data.ip_counts[ip] = app_data.ip_counts[ip] - 1
                     local success, message
-                    if m.encryption then
+                    if app_data.encryption then
                         success, message = encrypt_message(client,
-                        json.encode({ error = "Max connections reached", __luna = true }))
+                        json_encode({ error = "Max connections reached", __luna = true }))
                     else
-                        success, message = true, json.encode({ error = "Max connections reached", __luna = true })
+                        success, message = true, json_encode({ error = "Max connections reached", __luna = true })
                     end
                     if success then
-                        m.socket.send_message(message, ip, port)
+                        app_data.socket.send_message(message, ip, port)
                     end
                 end
             end
@@ -400,20 +409,20 @@ app.update = function(dt)
             if client then
                 client.lastActive = currentTime
                 if client.auth_token then
-                    local name = string.sub(data, 1, 10)
-                    local params = string.sub(data, 11, string.len(data))
+                    local name = string_sub(data, 1, 10)
+                    local params = string_sub(data, 11, string_len(data))
 
                     if name and params then
                         if name == "client_pub" then
-                            local args = security.utils.split(params, "|")
+                            local args = security_utils_split(params, "|")
                             local client_pub, auth_token = args[1], args[2]
 
                             if auth_token == client.auth_token then
-                                client_pub = security.utils.string_to_key(client_pub)
-                                client.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(
-                                m.server_private, client_pub))
+                                client_pub = security_utils_string_to_key(client_pub)
+                                client.shared_secret = security_utils_key_to_string(security_x25519_get_shared_key(
+                                app_data.server_private, client_pub))
                                 local ok, send_err = pcall(function()
-                                    client:__send(json.encode({
+                                    client:__send(json_encode({
                                         __luna = true,
                                         request = "connect",
                                         response = true,
@@ -423,7 +432,7 @@ app.update = function(dt)
                                     }))
                                 end)
                                 if not ok then
-                                    handle_error(m, "Error sending connect: " .. send_err)
+                                    handle_error(app_data, "Error sending connect: " .. send_err)
                                 end
                             end
                         elseif name == "client_tok" then
@@ -434,7 +443,7 @@ app.update = function(dt)
                                     client.token = decrypted
 
                                     local ok, send_err = pcall(function()
-                                        client:__send(json.encode({
+                                        client:__send(json_encode({
                                             __luna = true,
                                             request = "connect",
                                             response = true,
@@ -444,7 +453,7 @@ app.update = function(dt)
                                         }))
                                     end)
                                     if not ok then
-                                        handle_error(m, "Error sending token connect: " .. send_err)
+                                        handle_error(app_data, "Error sending token connect: " .. send_err)
                                     end
                                 end
                             end
@@ -452,24 +461,24 @@ app.update = function(dt)
                     end
                 else
                     local success, err
-                    if m.encryption then
+                    if app_data.encryption then
                         success, err = decrypt_message(client, data)
                     else
                         success, err = true, data
                     end
                     if success and err then
                         data = err
-                        if m.debug then
-                            print("app: " .. m.name, client_key, data)
+                        if app_data.debug then
+                            print("app: " .. app_data.name, client_key, data)
                         end
 
-                        if m.request_listener then
-                            m.request_listener(data, client)
+                        if app_data.request_listener then
+                            app_data.request_listener(data, client)
                         end
 
                         if not client.is_close then
                             local response
-                            for _, router_data in pairs(m.routers) do
+                            for _, router_data in pairs(app_data.routers) do
                                 local res = router_data:process(client, data)
                                 if res then
                                     response = res
@@ -487,15 +496,15 @@ app.update = function(dt)
 
                                 if not response_to_send.no_response then
                                     local ok, send_err = pcall(function()
-                                        client:send(json.encode(response_to_send))
+                                        client:send(json_encode(response_to_send))
                                     end)
                                     if not ok then
-                                        handle_error(m, "Error sending data to client " .. client_key .. ": " .. send_err)
+                                        handle_error(app_data, "Error sending data to client " .. client_key .. ": " .. send_err)
                                     end
                                 end
                             end
                         else
-                            handle_error(m,
+                            handle_error(app_data,
                                 "Error sending data to client " .. client_key .. ": " .. (err or "unknown decrypt error"))
                         end
                     end
@@ -503,27 +512,27 @@ app.update = function(dt)
             end
         end
 
-        for client_key, client in pairs(m.clients) do
-            if currentTime - client.lastActive > m.disconnect_time then
-                if m.timeout_client then
-                    local r = m.timeout_client(client, currentTime - client.lastActive, m.disconnect_time)
+        for client_key, client in pairs(app_data.clients) do
+            if currentTime - client.lastActive > app_data.disconnect_time then
+                if app_data.timeout_client then
+                    local r = app_data.timeout_client(client, currentTime - client.lastActive, app_data.disconnect_time)
                     if r or r == nil then
-                        if m.debug then
-                            print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                        if app_data.debug then
+                            print("app: " .. app_data.name, "Client disconnected ip: " .. client.ip ..
                                 ":" .. client.port .. " <due to timeout>", "Time: " .. currentTime - client.lastActive,
-                                "disconnect_time: " .. m.disconnect_time, "currentTime: " .. currentTime)
+                                "disconnect_time: " .. app_data.disconnect_time, "currentTime: " .. currentTime)
                         end
-                        m.clients[client_key]:close()
+                        app_data.clients[client_key]:close()
                     else
                         client.lastActive = currentTime
                     end
                 else
-                    if m.debug then
-                        print("app: " .. m.name, "Client disconnected ip: " .. client.ip ..
+                    if app_data.debug then
+                        print("app: " .. app_data.name, "Client disconnected ip: " .. client.ip ..
                             ":" .. client.port .. " <due to timeout>", "Time: " .. currentTime - client.lastActive,
-                            "disconnect_time: " .. m.disconnect_time, "currentTime: " .. currentTime)
+                            "disconnect_time: " .. app_data.disconnect_time, "currentTime: " .. currentTime)
                     end
-                    m.clients[client_key]:close()
+                    app_data.clients[client_key]:close()
                 end
             end
         end

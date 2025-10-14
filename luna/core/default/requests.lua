@@ -25,6 +25,9 @@ SOFTWARE.
 local req = {}
 local json = require("luna.libs.json")
 
+local table_insert, json_decode, pairs, tonumber, type, table_concat, string_format, tostring, print, pcall, os_time, coroutine_create =
+    table.insert, json.decode, pairs, tonumber, type, table.concat, string.format, tostring, print, pcall, os.time, coroutine.create
+
 req.new = function(router, config)
     local req_data
     req_data = {
@@ -60,7 +63,7 @@ end
 local function split(str, sep)
     local result = {}
     for part in str:gmatch("[^"..sep.."]+") do
-        table.insert(result, part)
+        table_insert(result, part)
     end
     return result
 end
@@ -73,11 +76,7 @@ local function parse_request(data)
         return nil, "Invalid request format"
     end
 
-    local max_iterations = 300
-    local iteration = 0
-
-    local args = {}
-
+    local max_iterations, iteration, args = 300, 0, {}
     while args_str and args_str ~= "" do
         iteration = iteration + 1
         local key, value, remaining
@@ -86,7 +85,7 @@ local function parse_request(data)
         -- JSON: key=<json='["test",550]'>
         key, value, remaining = args_str:match("^(%S+)=<json='([^']*)'>%s*(.*)$")
         if key then
-            local success, decoded = pcall(json.decode, value)
+            local success, decoded = pcall(json_decode, value)
             if success then
                 args[key] = decoded
                 args_str = remaining
@@ -195,9 +194,8 @@ local function validate_args(validate_config, args)
         local value = args[key]
 
         if not validate_value(value, expected_types) then
-            local expected_str = table.concat(expected_types, " or ")
-            local actual_type = type(value)
-            return false, string.format("Argument '%s' expected to be %s, got %s (%s)", 
+            local expected_str, actual_type = table_concat(expected_types, " or "), type(value)
+            return false, string_format("Argument '%s' expected to be %s, got %s (%s)",
                 key, expected_str, actual_type, tostring(value))
         end
     end
@@ -224,7 +222,7 @@ local function apply_penalty(app, client_data, penalty, timeout_duration, error_
         return {error = error_msg, __luna = true}
     elseif penalty == "timeout" then
         app.blocked_ips = app.blocked_ips or {}
-        app.blocked_ips[client_data.ip] = os.time() + timeout_duration
+        app.blocked_ips[client_data.ip] = os_time() + timeout_duration
         if app.debug then
             print("app: "..app.name, "Client timed out ip: "..client_data.ip..":"..client_data.port.." for "..timeout_duration.." seconds")
         end
@@ -236,7 +234,7 @@ end
 req.process = function(router, client_data, data)
     router.app.blocked_ips = router.app.blocked_ips or {}
     if router.app.blocked_ips[client_data.ip] then
-        if os.time() < router.app.blocked_ips[client_data.ip] then
+        if os_time() < router.app.blocked_ips[client_data.ip] then
             return {error = "Client IP "..client_data.ip.." is temporarily blocked", __luna = true}
         else
             router.app.blocked_ips[client_data.ip] = nil
@@ -246,11 +244,9 @@ req.process = function(router, client_data, data)
     local request_handler
     local path_parts = split(data:match("^(%S+)") or "", "/")
     if #path_parts >= 2 then
-        local router_prefix = path_parts[1]
-        local request_prefix = path_parts[2]
-        local router_data = router.app.routers[router_prefix]
+        local router_data = router.app.routers[path_parts[1]]
         if router_data then
-            request_handler = router_data.requests[request_prefix]
+            request_handler = router_data.requests[path_parts[2]]
         end
     end
 
@@ -271,14 +267,13 @@ req.process = function(router, client_data, data)
     end
 
     local router_prefix = path_parts[1]
-    local request_prefix = path_parts[2]
 
     local router_data = router.app.routers[router_prefix]
     if not router_data then
         return nil, "No router found for prefix: "..router_prefix
     end
 
-    request_handler = router_data.requests[request_prefix]
+    request_handler = router_data.requests[path_parts[2]]
     if not request_handler or not request_handler.fun then
         return nil, "No handler found for path: "..request.path
     end
@@ -313,7 +308,7 @@ req.process = function(router, client_data, data)
 
     local result
     if request_handler.async then
-        local coro = coroutine.create(request_handler.fun)
+        local coro = coroutine_create(request_handler.fun)
         router.app.running_funs[coro] = {request_handler, request, client_data}
         result = {request = request.path, time = request.args.__time or 0, id = (request.args.__id or "unknown id"), __luna = true, __noawait = request.args.__noawait or nil, no_response = true}
     else
@@ -346,9 +341,9 @@ req.process = function(router, client_data, data)
 
     if not request_handler.async and request_handler.response_validate then
         if not validate_value(result.response, request_handler.response_validate) then
-            local expected_str = table.concat(request_handler.response_validate, " or ")
+            local expected_str = table_concat(request_handler.response_validate, " or ")
             local actual_type = type(result.response)
-            local err_msg = string.format("Response expected to be %s, got %s (%s)",
+            local err_msg = string_format("Response expected to be %s, got %s (%s)",
                 expected_str, actual_type, tostring(result.response))
             if request_handler.error_handler then
                 request_handler.error_handler(err_msg)

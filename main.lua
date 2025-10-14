@@ -169,7 +169,6 @@ end
 --     -- local start = os.clock()
 --     -- local response = client:fetch("api/echo", {text = string.rep("hello world",99900)}, 100)
 --     -- print("size: "..#response, " size wait: "..#string.rep("hello world",99900))
-
 --     -- print("Time", os.clock() - start)
 
 --     -- client:noawait_fetch("api/echo", function (data, err)
@@ -448,7 +447,7 @@ end
 --     lunac.close()
 -- end
 
-
+-- _G.love = love
 -- local security = require("luna.libs.security")
 
 -- local start_time = os.clock()
@@ -460,7 +459,7 @@ end
 
 -- print("Key generation time: " .. keygen_time .. " seconds")
 
--- local message = string.rep("T", 1024 * 1024)
+-- local message = string.rep("T", 1024 * 1024 * 2)
 -- local nonce = security.utils.generate_nonce()
 
 -- start_time = os.clock()

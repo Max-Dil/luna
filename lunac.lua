@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: lunac
--- Generated: 14.10.2025, 10:26:22
+-- Generated: 14.10.2025, 22:39:18
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -46,18 +46,26 @@ local socket, json, message_manager, security =
     require("lunac.libs.udp_messages"),
     require("lunac.libs.security")
 
-local print, error, tostring, type, pairs, pcall, table, string, setmetatable =
-    print, error, tostring, type, pairs, pcall, table, string, setmetatable
+local print, error, tostring, type, pairs, pcall, setmetatable, security_chacha20_encrypt,
+    security_base64_encode, security_base64_decode, json_decode, security_utils_string_to_key,
+    socket_gettime, socket_sleep, security_utils_key_to_string, security_x25519_get_shared_key,
+    json_encode, table_insert, string_format, table_concat, security_utils_uuid, os_time,
+    security_x25519_generate_keypair =
+        print, error, tostring, type, pairs, pcall, setmetatable, security.chacha20.encrypt,
+        security.base64.encode, security.base64.decode, json.decode, security.utils.string_to_key,
+        socket.gettime, socket.sleep, security.utils.key_to_string, security.x25519.get_shared_key,
+        json.encode, table.insert, string.format, table.concat, security.utils.uuid, os.time,
+        security.x25519.generate_keypair
 
 local app, apps = {}, {}
 
 local encrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
-        local success, err = pcall(security.chacha20.encrypt, message,
+        local success, err = pcall(security_chacha20_encrypt, message,
             app_data.shared_secret, app_data.nonce)
         if success then
             err = err:match("^(.-)%z*$") or err
-            success, err = pcall(security.base64.encode, err)
+            success, err = pcall(security_base64_encode, err)
         end
         return success, err
     else
@@ -67,9 +75,9 @@ end
 
 local decrypt_message = function(app_data, message)
     if app_data.shared_secret and app_data.nonce then
-        local success, err = pcall(security.base64.decode, message)
+        local success, err = pcall(security_base64_decode, message)
         if success then
-            success, err = pcall(security.chacha20.encrypt, err,
+            success, err = pcall(security_chacha20_encrypt, err,
                 app_data.shared_secret, app_data.nonce)
             if success then
                 err = err:match("^(.-)%z*$") or err
@@ -82,7 +90,7 @@ local decrypt_message = function(app_data, message)
 end
 
 local function parse_response(line)
-    local ok, result = pcall(json.decode, line)
+    local ok, result = pcall(json_decode, line)
     if ok and type(result) == "table" then
         return result
     end
@@ -125,10 +133,10 @@ local function try_connect(app_data)
                 timestamp = 0,
                 callback = function(data, err)
                     if data then
-                        local success, decoded = pcall(json.decode, data)
+                        local success, decoded = pcall(json_decode, data)
                         if success then
                             if decoded.pub and decoded.token and decoded.nonce then
-                                server_pub, token, nonce = security.utils.string_to_key(decoded.pub), decoded.token,
+                                server_pub, token, nonce = security_utils_string_to_key(decoded.pub), decoded.token,
                                     decoded.nonce
                             else
                                 error_message = "Error not found connect args"
@@ -142,11 +150,11 @@ local function try_connect(app_data)
                 end
             }
 
-            start_time = socket.gettime()
-            while not (token and server_pub and nonce) and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            start_time = socket_gettime()
+            while not (token and server_pub and nonce) and (socket_gettime() - start_time < TIMEOUT) and not error_message do
                 if app_data.server then app_data.server.update(1 / 60) end
                 app.update(1 / 60)
-                socket.sleep(0.001)
+                socket_sleep(0.001)
             end
 
             if error_message then
@@ -157,12 +165,12 @@ local function try_connect(app_data)
                 return false
             end
 
-            app_data.nonce = security.base64.decode(nonce)
-            app_data.shared_secret = security.utils.key_to_string(security.x25519.get_shared_key(app_data.client_private,
+            app_data.nonce = security_base64_decode(nonce)
+            app_data.shared_secret = security_utils_key_to_string(security_x25519_get_shared_key(app_data.client_private,
                 server_pub))
 
             success, err = pcall(app_data.socket.send_message,
-                "client_pub" .. security.utils.key_to_string(app_data.client_public) .. "|" .. token,
+                "client_pub" .. security_utils_key_to_string(app_data.client_public) .. "|" .. token,
                 app_data.host, app_data.port)
             if not success then
                 app_data.error_handler("Client pub send failed: " .. err)
@@ -182,11 +190,11 @@ local function try_connect(app_data)
                 end
             }
 
-            start_time = socket.gettime()
-            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            start_time = socket_gettime()
+            while not connect and (socket_gettime() - start_time < TIMEOUT) and not error_message do
                 if app_data.server then app_data.server.update(1 / 60) end
                 app.update(1 / 60)
-                socket.sleep(0.001)
+                socket_sleep(0.001)
             end
 
             if error_message then
@@ -197,9 +205,9 @@ local function try_connect(app_data)
                 return false
             end
 
-            local client_token = security.chacha20.encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
+            local client_token = security_chacha20_encrypt(app_data.client_token, app_data.shared_secret, app_data.nonce)
             client_token = client_token:match("^(.-)%z*$") or client_token
-            client_token = security.base64.encode(client_token)
+            client_token = security_base64_encode(client_token)
             success, err = pcall(app_data.socket.send_message,
                 "client_tok" .. client_token,
                 app_data.host, app_data.port)
@@ -221,11 +229,11 @@ local function try_connect(app_data)
                 end
             }
 
-            start_time = socket.gettime()
-            while not connect and (socket.gettime() - start_time < TIMEOUT) and not error_message do
+            start_time = socket_gettime()
+            while not connect and (socket_gettime() - start_time < TIMEOUT) and not error_message do
                 if app_data.server then app_data.server.update(1 / 60) end
                 app.update(1 / 60)
-                socket.sleep(0.001)
+                socket_sleep(0.001)
             end
 
             if error_message then
@@ -246,8 +254,8 @@ local function try_connect(app_data)
             app_data.client_connect = app_data.socket.new_connect(app_data.client, app_data.host, app_data.port)
         end
 
-        local start_time = socket.gettime()
-        while (socket.gettime() - start_time < 0.1) do socket.sleep(0.001) end
+        local start_time = socket_gettime()
+        while (socket_gettime() - start_time < 0.1) do socket_sleep(0.001) end
 
         print("Initialized UDP client for " .. app_data.host .. ":" .. app_data.port)
         if app_data.connect_server then
@@ -278,7 +286,7 @@ local function serialize_request(args, app_data, request_id, timestamp, request,
         elseif type(v) == "number" then
             text = v
         elseif type(v) == "table" then
-            local s, e = pcall(json.encode, v)
+            local s, e = pcall(json_encode, v)
             if not s then
                 if app_data.no_errors then
                     app_data.error_handler("Serialization failed: " .. e)
@@ -298,17 +306,17 @@ local function serialize_request(args, app_data, request_id, timestamp, request,
             text = "'no support " .. type(v) .. "'"
             error("'no support " .. type(v) .. "'", 2)
         end
-        table.insert(arg_parts, string.format(k .. "=" .. text))
+        table_insert(arg_parts, string_format(k .. "=" .. text))
     end
-    table.insert(arg_parts, "__id='" .. request_id .. "'")
-    table.insert(arg_parts, "__time='" .. timestamp .. "'")
+    table_insert(arg_parts, "__id='" .. request_id .. "'")
+    table_insert(arg_parts, "__time='" .. timestamp .. "'")
     if app_data.encryption then
-        table.insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
+        table_insert(arg_parts, "__client_token='" .. app_data.client_token .. "'")
     end
     if noawait then
-        table.insert(arg_parts, "__noawait=True")
+        table_insert(arg_parts, "__noawait=True")
     end
-    request = request .. " " .. table.concat(arg_parts, " ")
+    request = request .. " " .. table_concat(arg_parts, " ")
     return request
 end
 
@@ -327,8 +335,8 @@ local class = {
             end
         end
 
-        local request_id = security.utils.uuid()
-        local timestamp = tostring(os.time())
+        local request_id = security_utils_uuid()
+        local timestamp = tostring(os_time())
 
         local request = path
         if args then
@@ -342,7 +350,7 @@ local class = {
         app_data.pending_requests[request_id] = {
             path = path,
             timestamp = timestamp,
-            start_time = socket.gettime()
+            start_time = socket_gettime()
         }
 
         local success, err
@@ -373,12 +381,10 @@ local class = {
             end
         end
 
-        local start_time = socket.gettime()
+        local start_time = socket_gettime()
         timeout = timeout or 5
 
-        local final_response = nil
-        local final_error = nil
-
+        local final_response, final_error
         while true do
             if app_data.server then
                 app_data.server.update(app_data.dt)
@@ -462,7 +468,7 @@ local class = {
                 break
             end
 
-            if socket.gettime() - start_time > timeout then
+            if socket_gettime() - start_time > timeout then
                 app_data.pending_requests[request_id] = nil
                 if app_data.no_errors then
                     app_data.error_handler("Request timed out")
@@ -471,7 +477,7 @@ local class = {
                     error("Request timed out", 2)
                 end
             end
-            socket.sleep(0.001)
+            socket_sleep(0.001)
         end
 
         if final_error then
@@ -494,8 +500,8 @@ local class = {
             end
         end
 
-        local request_id = security.utils.uuid()
-        local timestamp = tostring(os.time())
+        local request_id = security_utils_uuid()
+        local timestamp = tostring(os_time())
 
         local request = path
         if args then
@@ -554,9 +560,9 @@ app.connect = function(config)
     local client_token
     local client_private, client_public
     if config.encryption then
-        local client_token_private = security.x25519.generate_keypair()
-        client_token = security.base64.encode(security.utils.key_to_string(client_token_private))
-        client_private, client_public = security.x25519.generate_keypair()
+        local client_token_private = security_x25519_generate_keypair()
+        client_token = security_base64_encode(security_utils_key_to_string(client_token_private))
+        client_private, client_public = security_x25519_generate_keypair()
     end
 
     local app_data
@@ -659,7 +665,7 @@ app.update = function(dt)
                 end
             end
 
-            local current_time = socket.gettime()
+            local current_time = socket_gettime()
             for request_id, req_data in pairs(app_data.pending_requests or {}) do
                 if current_time - req_data.start_time > (req_data.timeout or 5) then
                     app_data.pending_requests[request_id] = nil
@@ -2931,38 +2937,42 @@ do
         end
 
         local function quarter_round(s, a, b, c, d)
-            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 16);
-            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 12);
-            s[a] = (s[a] + s[b]) % MOD; s[d] = LROT(XOR(s[d], s[a]), 8);
-            s[c] = (s[c] + s[d]) % MOD; s[b] = LROT(XOR(s[b], s[c]), 7);
+            local sa, sb, sc, sd = s[a], s[b], s[c], s[d]
+            sa = (sa + sb) % MOD; sd = LROT(XOR(sd, sa), 16)
+            sc = (sc + sd) % MOD; sb = LROT(XOR(sb, sc), 12)
+            sa = (sa + sb) % MOD; sd = LROT(XOR(sd, sa), 8)
+            sc = (sc + sd) % MOD; sb = LROT(XOR(sb, sc), 7)
+            s[a], s[b], s[c], s[d] = sa, sb, sc, sd
         end
 
         local CONSTANTS = { 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574 };
-        local block = function(key, nonce, counter)
-            local init = {
+        local function block(key, nonce, counter)
+            local state = {
                 CONSTANTS[1], CONSTANTS[2], CONSTANTS[3], CONSTANTS[4],
                 key[1], key[2], key[3], key[4],
                 key[5], key[6], key[7], key[8],
-                counter, nonce[1], nonce[2], nonce[3],
+                counter, nonce[1], nonce[2], nonce[3]
             }
-            local state = {};
-            for i = 1, 16 do
-                state[i] = init[i];
-            end
+
+            local init = {}
+            for i = 1, 16 do init[i] = state[i] end
+
             for _ = 1, 10 do
-                quarter_round(state, 1, 5, 9, 13);
-                quarter_round(state, 2, 6, 10, 14);
-                quarter_round(state, 3, 7, 11, 15);
-                quarter_round(state, 4, 8, 12, 16);
-                quarter_round(state, 1, 6, 11, 16);
-                quarter_round(state, 2, 7, 12, 13);
-                quarter_round(state, 3, 8, 9, 14);
-                quarter_round(state, 4, 5, 10, 15);
+                quarter_round(state, 1, 5, 9, 13)
+                quarter_round(state, 2, 6, 10, 14)
+                quarter_round(state, 3, 7, 11, 15)
+                quarter_round(state, 4, 8, 12, 16)
+                quarter_round(state, 1, 6, 11, 16)
+                quarter_round(state, 2, 7, 12, 13)
+                quarter_round(state, 3, 8, 9, 14)
+                quarter_round(state, 4, 5, 10, 15)
             end
+
             for i = 1, 16 do
-                state[i] = (state[i] + init[i]) % 0x100000000;
+                state[i] = (state[i] + init[i]) % MOD
             end
-            return state;
+
+            return state
         end
 
         local unpack, pack, floor, ceil, table_concat = unpack, pack, math.floor, math.ceil, table.concat;

@@ -23,8 +23,7 @@ SOFTWARE.
 ]]
 
 local req = require("luna.core.default.requests")
-
-local router = {}
+local router, print, type = {}, print, type
 
 router.new_router = function(app, config)
     if app.routers[config.prefix] then
