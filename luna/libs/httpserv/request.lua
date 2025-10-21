@@ -26,6 +26,7 @@ local util = require("luna.libs.httpserv.util")
 local request = {}
 
 local string_gmatch, table_insert, table_concat = string.gmatch, table.insert, table.concat
+
 function request.parse(rawRequest, client, client_data)
     local req = {
         method = "",
@@ -38,12 +39,24 @@ function request.parse(rawRequest, client, client_data)
         raw = rawRequest
     }
 
-    if not rawRequest:find("\r\n\r\n") and not rawRequest:find("\n\n") then
+    local headerEnd = rawRequest:find("\r\n\r\n") or rawRequest:find("\n\n")
+    if not headerEnd then
         return nil, "Incomplete request"
     end
 
+    local headersPart, bodyPart = rawRequest:match("^(.-)\r\n\r\n(.*)$")
+    if not headersPart then
+        headersPart, bodyPart = rawRequest:match("^(.-)\n\n(.*)$")
+    end
+
+    if not headersPart then
+        return nil, "Invalid request format"
+    end
+
+    req.body = bodyPart or ""
+
     local lines = {}
-    for line in string_gmatch(rawRequest, "[^\r\n]+") do
+    for line in string_gmatch(headersPart, "[^\r\n]+") do
         table_insert(lines, line)
     end
 
@@ -68,18 +81,12 @@ function request.parse(rawRequest, client, client_data)
     req.path = path
     req.query = util.parseQueryString(queryString)
 
-    local i = 2
-    while i <= #lines and lines[i] ~= "" do
+    for i = 2, #lines do
         local header = lines[i]
         local key, value = header:match("^([^:]+):%s*(.+)$")
         if key and value then
             req.headers[key:lower()] = util.trim(value)
         end
-        i = i + 1
-    end
-
-    if i < #lines then
-        req.body = table_concat(lines, "\r\n", i + 1)
     end
 
     return req

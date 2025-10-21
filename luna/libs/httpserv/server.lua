@@ -412,7 +412,7 @@ function Server:processRequest(req, res, client_data)
         local routeHandler = self.router:findRoute(req.method, req.path)
 
         if routeHandler then
-            local success, handlerErr = pcall(routeHandler, req, res)
+            local success, handlerErr = pcall(routeHandler, req, res, client_data)
             if not success then
                 print("Route handler error: " .. handlerErr)
                 res:status(500):send("Internal Server Error")

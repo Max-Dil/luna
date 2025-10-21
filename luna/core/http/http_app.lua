@@ -141,7 +141,8 @@ http_app.new_app = function(config)
                         if requested_headers then
                             local headers = {}
                             for header in requested_headers:gmatch("[^,]+") do
-                                table_insert(headers, trim(header))
+                                header = trim(header)
+                                table_insert(headers, header)
                             end
 
                             for _, header in ipairs(headers) do
@@ -159,7 +160,7 @@ http_app.new_app = function(config)
                             end
                         end
 
-                        res:status(204):send("")
+                        res:status(204):send("true")
                         return
                     end
 
