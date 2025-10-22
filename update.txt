@@ -1,3 +1,6 @@
+6.9.6
+Исправлен rate limited
+
 6.9.5
 Добавлен client_data в слушателях запросов
 Баг фикс cors в http_app

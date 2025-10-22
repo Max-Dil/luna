@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: luna
--- Generated: 15.10.2025, 18:34:08
+-- Generated: 22.10.2025, 21:38:44
 
 local __lupack__ = {}
 local __orig_require__ = require
@@ -1127,7 +1127,8 @@ http_app.new_app = function(config)
                         if requested_headers then
                             local headers = {}
                             for header in requested_headers:gmatch("[^,]+") do
-                                table_insert(headers, trim(header))
+                                header = trim(header)
+                                table_insert(headers, header)
                             end
 
                             for _, header in ipairs(headers) do
@@ -1145,7 +1146,7 @@ http_app.new_app = function(config)
                             end
                         end
 
-                        res:status(204):send("")
+                        res:status(204):send("true")
                         return
                     end
 
@@ -1169,7 +1170,7 @@ http_app.new_app = function(config)
                 local max_requests = options.max_requests or 100
                 local skip = options.skip or function(req) return false end
                 local key_generator = options.key_generator or
-                    function(req) return req.headers["x-forwarded-for"] or req.client_data.ip:getpeername() or "unknown" end
+                    function(req) return req.headers["x-forwarded-for"] or req.client_data.ip:match("([^:]+):") or "unknown" end
                 local message = options.message or "Too many requests"
                 local status_code = options.status_code or 429
 
@@ -1231,12 +1232,12 @@ http_app.new_app = function(config)
                     local content_type = req.headers["content-type"] or ""
 
                     if req.body and req.body ~= "" then
-                        if content_type:find("application/json") then
+                        if content_type == "application/json" or content_type:find("application/json") then
                             local success, parsed = pcall(json_decode, req.body)
                             if success then
                                 req.body = parsed
                             end
-                        elseif content_type:find("application/x-www-form-urlencoded") then
+                        elseif content_type == "application/x-www-form-urlencoded" or content_type:find("application/x-www-form-urlencoded") then
                             req.body = util_parseQueryString(req.body)
                         end
                     end
@@ -1469,7 +1470,6 @@ http_app.close = function()
 end
 
 return http_app
-
 end
 
 -- luna/core/init.lua
@@ -2420,6 +2420,7 @@ local util = require("luna.libs.httpserv.util")
 local request = {}
 
 local string_gmatch, table_insert, table_concat = string.gmatch, table.insert, table.concat
+
 function request.parse(rawRequest, client, client_data)
     local req = {
         method = "",
@@ -2432,12 +2433,24 @@ function request.parse(rawRequest, client, client_data)
         raw = rawRequest
     }
 
-    if not rawRequest:find("\r\n\r\n") and not rawRequest:find("\n\n") then
+    local headerEnd = rawRequest:find("\r\n\r\n") or rawRequest:find("\n\n")
+    if not headerEnd then
         return nil, "Incomplete request"
     end
 
+    local headersPart, bodyPart = rawRequest:match("^(.-)\r\n\r\n(.*)$")
+    if not headersPart then
+        headersPart, bodyPart = rawRequest:match("^(.-)\n\n(.*)$")
+    end
+
+    if not headersPart then
+        return nil, "Invalid request format"
+    end
+
+    req.body = bodyPart or ""
+
     local lines = {}
-    for line in string_gmatch(rawRequest, "[^\r\n]+") do
+    for line in string_gmatch(headersPart, "[^\r\n]+") do
         table_insert(lines, line)
     end
 
@@ -2462,18 +2475,12 @@ function request.parse(rawRequest, client, client_data)
     req.path = path
     req.query = util.parseQueryString(queryString)
 
-    local i = 2
-    while i <= #lines and lines[i] ~= "" do
+    for i = 2, #lines do
         local header = lines[i]
         local key, value = header:match("^([^:]+):%s*(.+)$")
         if key and value then
             req.headers[key:lower()] = util.trim(value)
         end
-        i = i + 1
-    end
-
-    if i < #lines then
-        req.body = table_concat(lines, "\r\n", i + 1)
     end
 
     return req
@@ -3141,7 +3148,7 @@ function Server:processRequest(req, res, client_data)
         local routeHandler = self.router:findRoute(req.method, req.path)
 
         if routeHandler then
-            local success, handlerErr = pcall(routeHandler, req, res)
+            local success, handlerErr = pcall(routeHandler, req, res, client_data)
             if not success then
                 print("Route handler error: " .. handlerErr)
                 res:status(500):send("Internal Server Error")

@@ -184,7 +184,7 @@ http_app.new_app = function(config)
                 local max_requests = options.max_requests or 100
                 local skip = options.skip or function(req) return false end
                 local key_generator = options.key_generator or
-                    function(req) return req.headers["x-forwarded-for"] or req.client_data.ip:getpeername() or "unknown" end
+                    function(req) return req.headers["x-forwarded-for"] or req.client_data.ip:match("([^:]+):") or "unknown" end
                 local message = options.message or "Too many requests"
                 local status_code = options.status_code or 429
 
@@ -246,12 +246,12 @@ http_app.new_app = function(config)
                     local content_type = req.headers["content-type"] or ""
 
                     if req.body and req.body ~= "" then
-                        if content_type:find("application/json") then
+                        if content_type == "application/json" or content_type:find("application/json") then
                             local success, parsed = pcall(json_decode, req.body)
                             if success then
                                 req.body = parsed
                             end
-                        elseif content_type:find("application/x-www-form-urlencoded") then
+                        elseif content_type == "application/x-www-form-urlencoded" or content_type:find("application/x-www-form-urlencoded") then
                             req.body = util_parseQueryString(req.body)
                         end
                     end

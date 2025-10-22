@@ -1,6 +1,6 @@
 -- Lupack: Packed code
 -- Entry file: lunac
--- Generated: 15.10.2025, 18:34:32
+-- Generated: 22.10.2025, 21:39:08
 
 local __lupack__ = {}
 local __orig_require__ = require
