@@ -118,7 +118,7 @@ app.new_app = function(config)
             print("Error in app '" .. app_data.name .. "': " .. message)
         end,
         no_errors = config.no_errors,
-        host = config.host or "0.0.0.0",
+        host = config.host or "127.0.0.1",
         port = config.port or 433,
 
         new_client = config.new_client,

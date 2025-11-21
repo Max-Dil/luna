@@ -27,6 +27,7 @@ local string_gsub, string_char, tonumber, string_gmatch, string_match, io_open =
     string.gsub, string.char, tonumber, string.gmatch, string.match, io.open
 
 function util.urlDecode(str)
+    str = string_gsub(str, "%+", " ")
     return string_gsub(str, "%%(%x%x)", function(hex)
         return string_char(tonumber(hex, 16))
     end)

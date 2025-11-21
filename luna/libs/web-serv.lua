@@ -789,7 +789,8 @@ __lupack__["webserv.server_sync"] = function()
         return readable, writable
     end
 
-    local client = function(sock, raw_sock, protocol, clients)
+    local client = function(p, protocol, clients)
+        local sock, raw_sock = p.sock, p.raw_sock
         local self = {}
 
         self.state = 'OPEN'
@@ -798,7 +799,12 @@ __lupack__["webserv.server_sync"] = function()
         self.raw_sock = raw_sock or sock
 
         self.getpeername = function(self)
+            if p.ip and p.port then
+                return p.ip, p.port
+            end
+
             local ip, port, err
+
             if self.raw_sock and self.raw_sock.getpeername then
                 ip, port, err = self.raw_sock:getpeername()
                 if ip and port then
@@ -939,6 +945,7 @@ __lupack__["webserv.server_sync"] = function()
                         newsock:settimeout(0)
                         newsock:setoption('tcp-nodelay', true)
 
+                        local ip, port = newsock:getpeername()
                         if ssl_ctx then
                             local ssl_sock, ssl_err = ssl.wrap(newsock, ssl_ctx)
                             if not ssl_sock then
@@ -953,7 +960,9 @@ __lupack__["webserv.server_sync"] = function()
                                     raw_sock = newsock,
                                     buffer = "",
                                     request = {},
-                                    ssl_handshake_done = false
+                                    ssl_handshake_done = false,
+                                    ip = ip,
+                                    port = port
                                 }
                                 tinsert(pendings, pending)
                             end
@@ -963,7 +972,9 @@ __lupack__["webserv.server_sync"] = function()
                                 raw_sock = newsock,
                                 buffer = "",
                                 request = {},
-                                ssl_handshake_done = true
+                                ssl_handshake_done = true,
+                                ip = ip,
+                                port = port
                             }
                             tinsert(pendings, pending)
                         end
@@ -1010,7 +1021,7 @@ __lupack__["webserv.server_sync"] = function()
                                             p.raw_sock:close()
                                             table_remove(pendings, i)
                                             if on_error then
-                                                on_error('invalid request')
+                                                on_error('invalid request '..upgrade_request)
                                             end
                                             break
                                         end
@@ -1054,7 +1065,7 @@ __lupack__["webserv.server_sync"] = function()
                                             break
                                         end
 
-                                        local new_client = client(p.sock, p.raw_sock, protocol_index, clients)
+                                        local new_client = client(p, protocol_index, clients)
                                         clients[protocol_index][new_client] = true
                                         new_client.waiting_for = nil
                                         new_client.co = coroutine_create(function()

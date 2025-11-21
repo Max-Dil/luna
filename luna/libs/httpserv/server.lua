@@ -37,7 +37,7 @@ Server.__index = Server
 
 function Server:new()
     local obj = {
-        host = "localhost",
+        host = "127.0.0.1",
         port = 8080,
         protocol = "http",
         ssl_config = nil,
@@ -202,19 +202,30 @@ function Server:wrapSSL(client_socket)
     return ssl_socket, nil, client_socket
 end
 
-function Server:createClientData(client, is_ssl, raw_socket)
+function Server:createClientData(client, is_ssl, raw_socket, client_ip)
+    if not client_ip then
     local client_ip = "unknown"
 
-    if is_ssl and raw_socket then
-        local ip, port = raw_socket:getpeername()
-        if ip then
-            client_ip = ip .. ":" .. port
-        end
+    local target_socket = raw_socket or client
+    local ip, port = target_socket:getpeername()
+
+    if ip then
+        client_ip = ip .. ":" .. port
     else
-        local ip, port = client:getpeername()
-        if ip then
-            client_ip = ip .. ":" .. port
+
+        if is_ssl and raw_socket then
+
+            local ip2, port2 = raw_socket:getpeername()
+            if ip2 then
+                client_ip = ip2 .. ":" .. port2
+            end
+        else
+            local ip2, port2 = client:getpeername()
+            if ip2 then
+                client_ip = ip2 .. ":" .. port2
+            end
         end
+    end
     end
 
     local client_data = {
@@ -297,6 +308,9 @@ function Server:update()
     if client then
         client:settimeout(0)
 
+        local ip, port = client:getpeername()
+        local client_ip = ip and (ip .. ":" .. port) or "unknown"
+        
         local ssl_client, ssl_err, raw_socket = self:wrapSSL(client)
         if ssl_err then
             print("SSL handshake failed: " .. ssl_err)
@@ -306,7 +320,8 @@ function Server:update()
             local client_data = self:createClientData(
                 ssl_client or client, 
                 is_ssl, 
-                is_ssl and raw_socket or client
+                is_ssl and raw_socket or client,
+                client_ip
             )
             table_insert(self.clients, client_data)
         end
@@ -370,6 +385,9 @@ function Server:update()
             if err == "closed" then
                 self:closeClient(client_data, "client_closed")
                 remove_client = true
+            elseif err == "unexpected eof" then
+                self:closeClient(client_data, "unexpected_eof")
+                remove_client = true
             elseif err and err ~= "timeout" and err ~= "wantread" and err ~= "wantwrite" then
                 print("Client error: " .. err)
                 self:closeClient(client_data, "socket_error")
@@ -382,7 +400,12 @@ function Server:update()
                 if sent then
                     self:closeClient(client_data, "response_sent")
                     remove_client = true
-                elseif send_err and send_err ~= "timeout" then
+                elseif send_err == "Broken pipe" or send_err == "closed" then
+                    self:closeClient(client_data, "broken_pipe")
+                    remove_client = true
+                elseif err == "unexpected eof" then
+                    self:closeClient(client_data, "unexpected_eof")
+                elseif send_err and send_err ~= "timeout" and send_err ~= "wantread" and send_err ~= "wantwrite" and send_err ~= "unexpected eof while reading" then
                     print("Send error: " .. send_err)
                     self:closeClient(client_data, "send_error")
                     remove_client = true
