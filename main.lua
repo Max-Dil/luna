@@ -1,5 +1,4 @@
 -------- Base server example ------------
---[[
 local luna, lunac
 function love.load()
     luna = require("luna.init")
@@ -49,7 +48,6 @@ function love.update(dt)
         t = 0
     end
 end
-]]
 -----------------------------------------
 
 -- _G.love = love
@@ -261,153 +259,153 @@ end
 -------------------
 -- http_app_test --
 -------------------
-_G.love = love
+-- _G.love = love
 
-local luna = require("luna.init")
-local app = luna.new_http_app({
-    name = "test http app",
-    debug = true,
+-- local luna = require("luna.init")
+-- local app = luna.new_http_app({
+--     name = "test http app",
+--     debug = true,
 
-    no_errors = true,
+--     no_errors = true,
 
-    new_client = function(ip, client_data)
-        print("New client: " .. ip)
-    end,
-    close_client = function(ip, client_data, reason)
-        print("Close client: " .. ip .. "reason: " .. reason)
-    end,
-    error_client = function(ip, client_data, error_msg)
-        print("Client error: " .. ip .. " - " .. error_msg)
-    end,
-})
+--     new_client = function(ip, client_data)
+--         print("New client: " .. ip)
+--     end,
+--     close_client = function(ip, client_data, reason)
+--         print("Close client: " .. ip .. "reason: " .. reason)
+--     end,
+--     error_client = function(ip, client_data, error_msg)
+--         print("Client error: " .. ip .. " - " .. error_msg)
+--     end,
+-- })
 
-app:get("test/json", function(req, res, cl)
-    res:json({
-        message = "Hello, world!"
-    })
-end)
+-- app:get("test/json", function(req, res, cl)
+--     res:json({
+--         message = "Hello, world!"
+--     })
+-- end)
 
-local api = app:group("/api")
-api:get("/time", function(req, res, cl)
-    res:send("<h1>Current Time</h1><p>" .. os.date() .. "</p>")
-end)
+-- local api = app:group("/api")
+-- api:get("/time", function(req, res, cl)
+--     res:send("<h1>Current Time</h1><p>" .. os.date() .. "</p>")
+-- end)
 
-app:use(app.templates.static(arg[1]))
-app:listen(8080, "localhost")
+-- app:use(app.templates.static(arg[1]))
+-- app:listen(8080, "localhost")
 
-local inc_clients = {}
-do -- Веб сокеты тест для index.html сайт по ссылке http://localhost:8080
-    local app2
-    app2 = luna.new_web_app({
-        name = "web socket test",
-        host = "localhost",
-        port = 12345,
+-- local inc_clients = {}
+-- do -- Веб сокеты тест для index.html сайт по ссылке http://localhost:8080
+--     local app2
+--     app2 = luna.new_web_app({
+--         name = "web socket test",
+--         host = "localhost",
+--         port = 12345,
 
-        debug = true,
-        no_errors = true,
+--         debug = true,
+--         no_errors = true,
 
-        protocols = {
-            default = function(ws)
-                local ip, port = ws:getpeername()
-                print("New client ip: " .. ip .. " port: " .. port)
-                ws.on_close = function()
-                    print("ws " .. tostring(ws) .. " on_close.")
-                end
-                inc_clients[ws] = 0
-                while true do
-                    local message, opcode = ws:receive()
-                    if not message then
-                        ws:close()
-                        inc_clients[ws] = nil
-                        return
-                    end
-                    if opcode == app2.opcodes.TEXT then
-                        if message:match('reset') then
-                            inc_clients[ws] = 0
-                        end
-                        ws:send(tostring(inc_clients[ws]))
-                    end
-                end
-            end,
-        }
-    })
-end
+--         protocols = {
+--             default = function(ws)
+--                 local ip, port = ws:getpeername()
+--                 print("New client ip: " .. ip .. " port: " .. port)
+--                 ws.on_close = function()
+--                     print("ws " .. tostring(ws) .. " on_close.")
+--                 end
+--                 inc_clients[ws] = 0
+--                 while true do
+--                     local message, opcode = ws:receive()
+--                     if not message then
+--                         ws:close()
+--                         inc_clients[ws] = nil
+--                         return
+--                     end
+--                     if opcode == app2.opcodes.TEXT then
+--                         if message:match('reset') then
+--                             inc_clients[ws] = 0
+--                         end
+--                         ws:send(tostring(inc_clients[ws]))
+--                     end
+--                 end
+--             end,
+--         }
+--     })
+-- end
 
-local lunac = require("lunac.init")
-lunac.http.init({
-    luna = luna,
-})
+-- local lunac = require("lunac.init")
+-- lunac.http.init({
+--     luna = luna,
+-- })
 
-lunac.http.noawait_fetch("http://localhost:8080/api/time", {}, function(result, code, headers, status)
-    print("HTTP Code:", code)
-    print("Headers:", headers)
-    print("Status:", status)
-    print("Data:", result)
+-- lunac.http.noawait_fetch("http://localhost:8080/api/time", {}, function(result, code, headers, status)
+--     print("HTTP Code:", code)
+--     print("Headers:", headers)
+--     print("Status:", status)
+--     print("Data:", result)
 
-    if result then
-        print("Request completed successfully")
-    else
-        print("Error:", code)
-    end
-end)
+--     if result then
+--         print("Request completed successfully")
+--     else
+--         print("Error:", code)
+--     end
+-- end)
 
-local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("http://localhost:8080/api/time")
+-- local sync_data, sync_code, sync_headers, sync_status = lunac.http.fetch("http://localhost:8080/api/time")
 
-if sync_data then
-    print("-------------------")
-    print("Success:", true)
-    print("HTTP Code:", sync_code)
-    print("Status:", sync_status)
-    print("Data:", sync_data)
-    print("-------------------")
-else
-    print("Error sync:", sync_code)
-end
+-- if sync_data then
+--     print("-------------------")
+--     print("Success:", true)
+--     print("HTTP Code:", sync_code)
+--     print("Status:", sync_status)
+--     print("Data:", sync_data)
+--     print("-------------------")
+-- else
+--     print("Error sync:", sync_code)
+-- end
 
-local client = lunac.connect_to_web_app({
-    name = "web socket client test",
-    url = "ws://localhost:12345",
+-- local client = lunac.connect_to_web_app({
+--     name = "web socket client test",
+--     url = "ws://localhost:12345",
 
-    on_connect = function (self)
-        print("Connect to ws://localhost:12345")
-    end,
+--     on_connect = function (self)
+--         print("Connect to ws://localhost:12345")
+--     end,
 
-    on_message = function (self, data, opcode)
-        print(data, opcode)
-    end,
+--     on_message = function (self, data, opcode)
+--         print(data, opcode)
+--     end,
 
-    on_close = function (self, code, reason)
-        print("Web socket close: "..code)
-    end
-})
+--     on_close = function (self, code, reason)
+--         print("Web socket close: "..code)
+--     end
+-- })
 
-local t = 0
+-- local t = 0
 
-local last_werserv_update = 0
-function love.update(dt)
-    t = t + dt
-    if t > 2 then
-        client:send("reset")
-        t = 0
-    end
+-- local last_werserv_update = 0
+-- function love.update(dt)
+--     t = t + dt
+--     if t > 2 then
+--         client:send("reset")
+--         t = 0
+--     end
 
-    last_werserv_update = last_werserv_update + dt
-    if last_werserv_update >= 0.1 then
-        last_werserv_update = 0
-        for ws, number in pairs(inc_clients) do
-            ws:send(tostring(number))
-            inc_clients[ws] = number + 1
-        end
-    end
+--     last_werserv_update = last_werserv_update + dt
+--     if last_werserv_update >= 0.1 then
+--         last_werserv_update = 0
+--         for ws, number in pairs(inc_clients) do
+--             ws:send(tostring(number))
+--             inc_clients[ws] = number + 1
+--         end
+--     end
 
-    luna.update(dt)
-    lunac.update(dt)
-end
+--     luna.update(dt)
+--     lunac.update(dt)
+-- end
 
-function love.quit()
-    luna.close()
-    lunac.close()
-end
+-- function love.quit()
+--     luna.close()
+--     lunac.close()
+-- end
 -------------------
 -- end ------------
 -------------------

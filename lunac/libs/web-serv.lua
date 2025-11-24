@@ -741,12 +741,12 @@ __lupack__["webserv.server_sync"] = function()
     local socket, handshake, sync,
     tconcat, tinsert, table_remove,
     math_min,
-    coroutine_yield, coroutine_status, coroutine_resume, coroutine_create
+    coroutine_yield, coroutine_status, coroutine_resume, coroutine_create, os_time
     =
         require 'socket', require 'webserv.handshake', require 'webserv.sync',
         table.concat, table.insert, table.remove,
         math.min,
-        coroutine.yield, coroutine.status, coroutine.resume, coroutine.create
+        coroutine.yield, coroutine.status, coroutine.resume, coroutine.create, os.time
 
     local function process_sockets(read_sockets, write_sockets, batch_size, timeout)
         timeout = timeout or 0
@@ -789,7 +789,8 @@ __lupack__["webserv.server_sync"] = function()
         return readable, writable
     end
 
-    local client = function(sock, raw_sock, protocol, clients)
+    local client = function(p, protocol, clients)
+        local sock, raw_sock = p.sock, p.raw_sock
         local self = {}
 
         self.state = 'OPEN'
@@ -799,6 +800,10 @@ __lupack__["webserv.server_sync"] = function()
 
         self.getpeername = function(self)
             local ip, port, err
+            if p.ip and p.port then
+                return p.ip, p.port
+            end
+
             if self.raw_sock and self.raw_sock.getpeername then
                 ip, port, err = self.raw_sock:getpeername()
                 if ip and port then
@@ -908,6 +913,16 @@ __lupack__["webserv.server_sync"] = function()
 
         local self = {}
         self.update = function()
+            local now = os_time()
+            for i = #pendings, 1, -1 do
+                local p = pendings[i]
+                if now - p.created_at > 10 then
+                    p.sock:close()
+                    if p.raw_sock ~= p.sock then p.raw_sock:close() end
+                    table_remove(pendings, i)
+                end
+            end
+
             local read_socks = { raw_listener }
             local write_socks = {}
 
@@ -939,6 +954,7 @@ __lupack__["webserv.server_sync"] = function()
                         newsock:settimeout(0)
                         newsock:setoption('tcp-nodelay', true)
 
+                        local ip, port = newsock:getpeername()
                         if ssl_ctx then
                             local ssl_sock, ssl_err = ssl.wrap(newsock, ssl_ctx)
                             if not ssl_sock then
@@ -953,7 +969,10 @@ __lupack__["webserv.server_sync"] = function()
                                     raw_sock = newsock,
                                     buffer = "",
                                     request = {},
-                                    ssl_handshake_done = false
+                                    ssl_handshake_done = false,
+                                    ip = ip,
+                                    port = port,
+                                    created_at = os_time()
                                 }
                                 tinsert(pendings, pending)
                             end
@@ -963,7 +982,10 @@ __lupack__["webserv.server_sync"] = function()
                                 raw_sock = newsock,
                                 buffer = "",
                                 request = {},
-                                ssl_handshake_done = true
+                                ssl_handshake_done = true,
+                                ip = ip,
+                                port = port,
+                                created_at = os_time()
                             }
                             tinsert(pendings, pending)
                         end
@@ -989,8 +1011,10 @@ __lupack__["webserv.server_sync"] = function()
                                     p.sock:close()
                                     p.raw_sock:close()
                                     table_remove(pendings, i)
-                                    if on_error then
-                                        on_error('SSL handshake failed: ' .. tostring(handshake_err))
+                                    if handshake_err ~= "closed" and handshake_err ~= "unexpected eof while reading" then
+                                        if on_error then
+                                            on_error('SSL handshake failed: ' .. tostring(handshake_err))
+                                        end
                                     end
                                     break
                                 end
@@ -1054,7 +1078,7 @@ __lupack__["webserv.server_sync"] = function()
                                             break
                                         end
 
-                                        local new_client = client(p.sock, p.raw_sock, protocol_index, clients)
+                                        local new_client = client(p, protocol_index, clients)
                                         clients[protocol_index][new_client] = true
                                         new_client.waiting_for = nil
                                         new_client.co = coroutine_create(function()
@@ -1080,7 +1104,7 @@ __lupack__["webserv.server_sync"] = function()
                                     p.sock:close()
                                     p.raw_sock:close()
                                     table_remove(pendings, i)
-                                    if on_error then
+                                    if r_err ~= "closed" and on_error then
                                         on_error(r_err)
                                     end
                                 end
@@ -1166,7 +1190,7 @@ end
 
 __lupack__["webserv.sync"] = function()
     local ssl
-    local frame, handshake, tools = require 'webserv.frame', require 'webserv.handshake', require 'webserv.tools'
+    local frame, handshake, tools, socket = require 'webserv.frame', require 'webserv.handshake', require 'webserv.tools', require 'socket'
     local tinsert, tconcat, type = table.insert, table.concat, type
 
     local receive = function(self)
@@ -1248,7 +1272,7 @@ __lupack__["webserv.sync"] = function()
         return true
     end
 
-    local close = function(self, code, reason)
+    local close = function(self, code, reason, wait_receive, timeout)
         if self.state ~= 'OPEN' then
             return false, 1006, 'wrong state'
         end
@@ -1259,13 +1283,30 @@ __lupack__["webserv.sync"] = function()
         local encoded = frame.encode(msg, frame.CLOSE, not self.is_server)
         local n, err = self:sock_send(encoded)
         local was_clean = false
-        local code = 1005
-        local reason = ''
+        code = 1005
+        reason = ''
+
         if n == #encoded then
             self.is_closing = true
-            local rmsg, opcode = self:receive()
-            if rmsg and opcode == frame.CLOSE then
-                code, reason = frame.decode_close(rmsg)
+            if wait_receive then
+                timeout = timeout or 5
+                local coro = coroutine.create(function ()
+                    local rmsg, opcode = self:receive()
+                    if rmsg and opcode == frame.CLOSE then
+                        code, reason = frame.decode_close(rmsg)
+                        was_clean = true
+                    end
+                end)
+
+                local start = socket.gettime()
+                while start - socket.gettime() < timeout do
+                    coroutine.resume(coro)
+                    if coroutine.status(coro) == "dead" then
+                        break
+                    end
+                    coroutine.yield("wantread")
+                end
+            else
                 was_clean = true
             end
         else
